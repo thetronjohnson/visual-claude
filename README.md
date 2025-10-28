@@ -4,6 +4,12 @@ A visual browser interface for [Claude Code](https://claude.com/claude-code) tha
 
 > **Note:** This project is not affiliated with or endorsed by Anthropic.
 
+
+
+https://github.com/user-attachments/assets/247f1e25-06d2-4065-8331-bca3e516c34e
+
+
+
 ## Description
 
 Visual Claude wraps Claude Code with a browser-based UI, enabling you to:
