@@ -9,7 +9,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gorilla/websocket"
-	"github.com/kiran/visual-claude/internal/status"
+	"github.com/thetronjohnson/visual-claude/internal/status"
 )
 
 // Watcher watches files for changes and notifies connected WebSocket clients

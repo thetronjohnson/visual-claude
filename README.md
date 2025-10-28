@@ -1,62 +1,81 @@
 # Visual Claude
 
-A Go-based wrapper around [Claude Code](https://claude.com/claude-code) that provides a visual browser interface for selecting elements and sending instructions directly to Claude Code.
+A visual browser interface for [Claude Code](https://claude.com/claude-code) that lets you select UI elements and send natural language instructions directly to Claude for real-time code changes.
+
+> **Note:** This project is not affiliated with or endorsed by Anthropic.
+
+## Description
+
+Visual Claude wraps Claude Code with a browser-based UI, enabling you to:
+- Drag and select any area of your web application
+- Type natural language instructions about what you want to change
+- Watch Claude Code make the changes in real-time
+- See updates instantly with automatic hot reload
+
+Built with Go, it acts as a reverse proxy between your browser and dev server, injecting a selection interface and streaming Claude Code's output to a beautiful terminal UI.
 
 ## Features
 
-- **Visual Element Selection**: Click any element on your web page to select it
-- **Minimal UI**: Clean, unobtrusive interface with a simple popup for instructions
-- **Screenshot Capture**: Automatically captures context around selected elements
-- **Live Reload**: File changes are automatically reflected in the browser via WebSocket
-- **Dev Server Integration**: Proxies your existing Vue/React dev server (Vite, webpack, etc.)
-- **Pseudo Terminal Communication**: Messages are sent directly to Claude Code via PTY
-- **Visual Status Indicators**: Real-time terminal display showing:
-  - Instruction prompts received from browser
-  - Animated spinner while Claude is processing
-  - Completion status with timing
-  - Files modified by Claude
-  - Browser reload notifications
-  - Full Claude Code output (both parsed and raw)
+- **Drag-to-Select Interface**: Select any UI area by dragging a rectangle
+- **Natural Language Instructions**: Tell Claude what to change in plain English
+- **Real-time Streaming**: See Claude's thinking and tool usage as it happens
+- **Beautiful TUI**: Bubble Tea terminal interface with live status updates
+- **Hot Reload**: Automatic browser refresh when files change
+- **Framework Agnostic**: Works with any dev server (Vite, webpack, Next.js, etc.)
+- **Modern UI**: Glassmorphism effects, smooth animations, and polished interactions
 
-## How It Works
+## How to Use
 
+1. **Start your dev server** (e.g., `npm run dev`)
+2. **Run Visual Claude:**
+   ```bash
+   visual-claude
+   ```
+3. **Select UI elements**: Click the "Select" button in the bottom-right corner
+4. **Drag to select**: Drag a rectangle over the UI area you want to modify
+5. **Enter instruction**: Type what you want Claude to do (e.g., "Make this button blue with rounded corners")
+6. **Send**: Press Enter or click "Send to Claude"
+7. **Watch it happen**: See Claude's output in the terminal and changes appear in your browser
+
+### Available Flags
+
+```bash
+visual-claude [options]
+
+Options:
+  -proxy-port     Proxy server port (default: 9999)
+  -target-port    Dev server port (default: auto-detect)
+  -dir           Project directory (default: current directory)
+  -claude-path   Path to Claude Code binary (default: "claude")
+  -verbose       Enable verbose logging
 ```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│   Browser   │◄────►│ Proxy Server │◄────►│  Dev Server │
-│  (Port 9999)│      │   (Go)       │      │ (Port 3000) │
-└─────────────┘      └──────────────┘      └─────────────┘
-       │                     │
-       │ WebSocket           │ PTY
-       │                     │
-       ▼                     ▼
-┌─────────────┐      ┌──────────────┐
-│   Inject.js │      │  Claude Code │
-│  (Element   │      │    (PTY)     │
-│  Selection) │      │              │
-└─────────────┘      └──────────────┘
-```
 
-1. Visual Claude starts a proxy server on port 9999
-2. The proxy forwards requests to your dev server
-3. JavaScript is injected into all HTML responses
-4. You click elements and send instructions via the browser UI
-5. Messages are formatted and sent to Claude Code via pseudo terminal
-6. Claude Code makes changes to your files
-7. File watcher detects changes and triggers browser reload
+### Example Usage
+
+```bash
+# Auto-detect dev server
+visual-claude
+
+# Specify dev server port
+visual-claude -target-port 3000
+
+# Custom proxy port and project directory
+visual-claude -proxy-port 8888 -dir ~/projects/my-app
+```
 
 ## Installation
 
 ### Prerequisites
 
-- Go 1.21 or higher
-- [Claude Code](https://docs.claude.com/claude-code) installed and available in PATH
-- A running dev server (Vue, React, etc.)
+- **Go 1.21+** - [Install Go](https://go.dev/doc/install)
+- **Claude Code** - [Install Claude Code](https://docs.claude.com/claude-code)
+- **Running dev server** - Any local web server (Vite, webpack, Next.js, etc.)
 
 ### Build from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/kiran/visual-claude.git
+git clone https://github.com/thetronjohnson/visual-claude.git
 cd visual-claude
 
 # Build the binary
@@ -66,127 +85,23 @@ make build
 make install
 ```
 
-## Usage
+## Dependencies
 
-### Basic Usage
+Visual Claude uses these Go packages:
 
-Start your dev server first (e.g., `npm run dev`), then run:
+- **[gorilla/websocket](https://github.com/gorilla/websocket)** - WebSocket connections for browser communication
+- **[fsnotify/fsnotify](https://github.com/fsnotify/fsnotify)** - File system watching for hot reload
+- **[charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea)** - Terminal UI framework
+- **[charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss)** - Terminal styling
 
-```bash
-visual-claude
-```
+## Tech Stack
 
-This will:
-1. Auto-detect your dev server (checks ports 5173, 3000, 8080, 4200, 8000)
-2. Start Claude Code in your project directory
-3. Start the proxy server on port 9999
-4. Open your browser automatically
-
-### With Flags
-
-```bash
-# Specify target dev server port
-visual-claude -target-port 3000
-
-# Use a different proxy port
-visual-claude -proxy-port 8888
-
-# Specify project directory
-visual-claude -dir /path/to/project
-
-# Enable verbose logging
-visual-claude -verbose
-```
-
-### All Available Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-proxy-port` | 9999 | Port for the proxy server |
-| `-target-port` | 0 (auto) | Target dev server port |
-| `-dir` | . | Project directory |
-| `-claude-path` | claude | Path to Claude Code binary |
-| `-verbose` | false | Enable verbose logging |
-
-## Using Visual Claude
-
-1. **Enable Selection Mode**: Click the eye icon (👁️) in the bottom-right corner
-2. **Select an Element**: Click any element on the page
-3. **Enter Instruction**: Type what you want Claude to do (e.g., "Change this button color to blue")
-4. **Send to Claude**: Press Enter or click "Send to Claude"
-5. **Watch the Terminal**: See real-time status updates with animated spinner
-6. **Watch Changes**: Claude Code will make the changes and the browser will auto-reload
-
-### Terminal Status Display
-
-When you send an instruction, the terminal shows:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📨 [14:32:15] Instruction Received
-   Element: button.primary-btn
-   Action: Change this button color to blue
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ Sent to Claude Code
-
-⠹ Processing... (3s)
-
-[Claude Code output appears here in real-time...]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ [14:32:21] Completed in 6 seconds
-📝 Files Modified:
-   • src/components/Button.vue
-🔁 Browser reloaded (1 client)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-### Example Instructions
-
-- "Change this button's color to blue"
-- "Add a hover effect to this element"
-- "Make this text larger and bold"
-- "Center this div horizontally"
-- "Add padding to this section"
-- "Change the font family to Inter"
-
-## Supported Frameworks
-
-Visual Claude works with any web framework that runs a local dev server:
-
-- **Vue**: Vite (port 5173)
-- **React**: Vite, webpack-dev-server (ports 3000, 5173)
-- **Angular**: ng serve (port 4200)
-- **Svelte**: Vite (port 5173)
-- **Next.js**: (port 3000)
-- **Static servers**: Any HTTP server
-
-## Architecture
-
-### Components
-
-- **PTY Manager** (`internal/pty/`): Manages Claude Code pseudo terminal
-- **Proxy Server** (`internal/proxy/`): Reverse proxy with HTML injection
-- **File Watcher** (`internal/watcher/`): Watches files and triggers reloads
-- **Bridge** (`internal/bridge/`): Coordinates browser ↔ Claude Code messages
-- **Browser Client** (`internal/proxy/inject.js`): Injected JavaScript for UI
-
-### File Watching
-
-The file watcher monitors these extensions:
-- `.vue`, `.jsx`, `.tsx`, `.js`, `.ts`
-- `.css`, `.scss`, `.sass`, `.less`
-- `.html`
-
-Excluded directories:
-- `node_modules`
-- `.git`
-- `dist`
-- `build`
-- `.next`
-
-Changes are debounced (300ms) to avoid excessive reloads.
+- **Language**: Go 1.21+
+- **Terminal UI**: Bubble Tea + Lipgloss
+- **WebSockets**: Gorilla WebSocket
+- **File Watching**: fsnotify
+- **Browser UI**: Vanilla JavaScript with CSS animations
+- **Claude Integration**: Claude Code CLI with `--output-format stream-json`
 
 ## Development
 
@@ -194,24 +109,39 @@ Changes are debounced (300ms) to avoid excessive reloads.
 
 ```
 visual-claude/
-├── cmd/visual-claude/          # CLI entry point
+├── cmd/visual-claude/        # CLI entry point
 │   └── main.go
 ├── internal/
-│   ├── pty/                    # PTY management
-│   ├── proxy/                  # Proxy server & injection
-│   ├── watcher/                # File watching
-│   ├── bridge/                 # Message coordination
-│   └── config/                 # Configuration
+│   ├── pty/                  # Claude Code execution & streaming
+│   │   └── manager.go
+│   ├── proxy/                # Reverse proxy & injection
+│   │   ├── server.go
+│   │   ├── inject.js         # Browser UI
+│   │   └── injector.go
+│   ├── watcher/              # File watching
+│   │   └── watcher.go
+│   ├── bridge/               # Browser ↔ Claude messaging
+│   │   └── bridge.go
+│   ├── tui/                  # Terminal UI
+│   │   ├── model.go
+│   │   └── view.go
+│   ├── status/               # Status display
+│   │   └── display.go
+│   └── config/               # Configuration
+│       └── config.go
 ├── go.mod
 ├── Makefile
 └── README.md
 ```
 
-### Building
+### Development Commands
 
 ```bash
-# Build binary
+# Build the binary
 make build
+
+# Install to /usr/local/bin
+make install
 
 # Run tests
 make test
@@ -219,65 +149,33 @@ make test
 # Clean build artifacts
 make clean
 
-# Install to /usr/local/bin
-make install
+# Run with verbose output
+go run cmd/visual-claude/main.go -verbose
+
+# Build for release
+go build -ldflags="-s -w" -o visual-claude cmd/visual-claude/main.go
 ```
 
-### Dependencies
+### How It Works
 
-- [creack/pty](https://github.com/creack/pty) - Pseudo terminal support
-- [fsnotify/fsnotify](https://github.com/fsnotify/fsnotify) - File system notifications
-- [gorilla/websocket](https://github.com/gorilla/websocket) - WebSocket support
-
-## Limitations
-
-- **macOS only** (currently uses `open` command for browser launching)
-- **Web projects only** (requires HTTP server)
-- **No Windows/Linux support yet** (coming soon)
-
-## Troubleshooting
-
-### Dev server not detected
-
-```bash
-# Start your dev server first
-npm run dev
-
-# Then run visual-claude with explicit port
-visual-claude -target-port 3000
-```
-
-### Claude Code not found
-
-```bash
-# Install Claude Code first
-# See: https://docs.claude.com/claude-code
-
-# Or specify custom path
-visual-claude -claude-path /path/to/claude
-```
-
-### Port already in use
-
-```bash
-# Use a different proxy port
-visual-claude -proxy-port 8888
-```
-
-### Changes not reflecting
-
-- Check that file watching is working (use `-verbose` flag)
-- Ensure your dev server supports hot reload
-- Try manually refreshing the browser
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+1. **Proxy Server**: Intercepts HTTP requests to your dev server
+2. **Script Injection**: Injects `inject.js` into all HTML responses
+3. **Browser Selection**: User drags to select UI elements
+4. **WebSocket Message**: Selection + instruction sent to Go server
+5. **Claude Execution**: Message formatted and sent to Claude Code CLI
+6. **Streaming Output**: JSONL events parsed and displayed in TUI
+7. **File Changes**: Claude modifies files
+8. **Hot Reload**: File watcher detects changes → WebSocket → Browser reload
 
 ## License
 
-MIT
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) - see the [LICENSE](LICENSE) file for details.
 
-## Credits
+The AGPL-3.0 license ensures that:
+- You can freely use, modify, and distribute this software
+- If you modify and deploy this software on a server, you must make your modified source code available to users
+- Any derivative works must also be licensed under AGPL-3.0
 
-Built with Go and powered by [Claude Code](https://claude.com/claude-code) from Anthropic.
+## Acknowledgments
+
+Powered by [Claude Code](https://claude.com/claude-code) from Anthropic.

@@ -10,8 +10,22 @@
   let reloadWs = null;
   let messageWs = null;
 
-  // Create UI elements
+  // Create UI elements with CSS custom properties
   const styles = `
+    :root {
+      --vc-primary: #3b82f6;
+      --vc-primary-hover: #2563eb;
+      --vc-success: #22c55e;
+      --vc-danger: #ef4444;
+      --vc-gray-50: #f9fafb;
+      --vc-gray-100: #f3f4f6;
+      --vc-gray-200: #e5e7eb;
+      --vc-gray-400: #9ca3af;
+      --vc-gray-600: #6b7280;
+      --vc-gray-700: #374151;
+      --vc-gray-900: #1f2937;
+    }
+
     .vc-overlay {
       position: fixed;
       inset: 0;
@@ -24,45 +38,94 @@
       pointer-events: auto;
     }
 
+    @keyframes vc-dash {
+      to {
+        stroke-dashoffset: -100;
+      }
+    }
+
     .vc-selection-rect {
       position: fixed;
-      border: 2px solid #3b82f6;
-      background: rgba(59, 130, 246, 0.15);
+      border: 2px dashed var(--vc-primary);
+      background: rgba(59, 130, 246, 0.08);
+      border-radius: 8px;
       pointer-events: none;
       z-index: 999999;
       display: none;
+      box-shadow:
+        0 0 0 1px rgba(59, 130, 246, 0.2),
+        0 10px 30px rgba(59, 130, 246, 0.15);
+      animation: vc-dash 20s linear infinite;
+      stroke-dasharray: 10 5;
+      transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .vc-selection-rect.vc-show {
       display: block;
+      animation: vc-fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes vc-fadeIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
     }
 
     .vc-selection-info {
       position: fixed;
-      background: #3b82f6;
+      background: rgba(59, 130, 246, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       color: white;
-      padding: 4px 8px;
-      border-radius: 4px;
+      padding: 6px 12px;
+      border-radius: 6px;
       font-size: 12px;
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-weight: 500;
       pointer-events: none;
       z-index: 1000000;
       display: none;
+      box-shadow:
+        0 4px 12px rgba(59, 130, 246, 0.3),
+        0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .vc-selection-info.vc-show {
       display: block;
+      animation: vc-tooltipIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes vc-tooltipIn {
+      from {
+        opacity: 0;
+        transform: scale(0.85) translateY(-5px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
     }
 
     .vc-popup {
       position: fixed;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-      padding: 24px;
+      transform: translate(-50%, -50%) scale(1);
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      box-shadow:
+        0 25px 50px rgba(0, 0, 0, 0.15),
+        0 0 0 1px rgba(0, 0, 0, 0.05),
+        0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+      padding: 28px;
       width: 480px;
       max-width: 90vw;
       z-index: 1000000;
@@ -71,41 +134,67 @@
 
     .vc-popup.vc-show {
       display: block;
+      animation: vc-modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes vc-modalIn {
+      from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+      }
     }
 
     .vc-popup-header {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      color: #1f2937;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 18px;
+      color: var(--vc-gray-900);
+      letter-spacing: -0.02em;
     }
 
     .vc-popup-selection-info {
       font-size: 13px;
-      color: #6b7280;
-      margin-bottom: 16px;
-      padding: 12px;
-      background: #f3f4f6;
-      border-radius: 8px;
-      font-family: system-ui, sans-serif;
+      color: var(--vc-gray-600);
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      background: linear-gradient(135deg, var(--vc-gray-50) 0%, var(--vc-gray-100) 100%);
+      border-radius: 10px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-weight: 500;
+      border: 1px solid var(--vc-gray-200);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
 
     .vc-popup-textarea {
       width: 100%;
-      min-height: 100px;
-      padding: 12px;
-      border: 2px solid #e5e7eb;
-      border-radius: 8px;
+      min-height: 110px;
+      padding: 14px;
+      border: 2px solid var(--vc-gray-200);
+      border-radius: 10px;
       font-size: 14px;
       font-family: system-ui, -apple-system, sans-serif;
+      line-height: 1.6;
       resize: vertical;
-      margin-bottom: 16px;
-      transition: border-color 0.2s;
+      margin-bottom: 20px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
 
     .vc-popup-textarea:focus {
       outline: none;
-      border-color: #3b82f6;
+      border-color: var(--vc-primary);
+      box-shadow:
+        0 0 0 3px rgba(59, 130, 246, 0.1),
+        0 2px 8px rgba(59, 130, 246, 0.15);
+      transform: translateY(-1px);
+    }
+
+    .vc-popup-textarea::placeholder {
+      color: var(--vc-gray-400);
     }
 
     .vc-popup-buttons {
@@ -115,72 +204,165 @@
     }
 
     .vc-button {
-      padding: 10px 20px;
-      border-radius: 8px;
+      padding: 11px 24px;
+      border-radius: 10px;
       border: none;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: system-ui, -apple-system, sans-serif;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .vc-button:active {
+      transform: scale(0.97);
     }
 
     .vc-button-primary {
-      background: #3b82f6;
+      background: linear-gradient(135deg, var(--vc-primary) 0%, #2563eb 100%);
       color: white;
+      box-shadow:
+        0 4px 12px rgba(59, 130, 246, 0.3),
+        0 0 0 1px rgba(255, 255, 255, 0.1) inset;
     }
 
     .vc-button-primary:hover {
-      background: #2563eb;
+      box-shadow:
+        0 6px 20px rgba(59, 130, 246, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+      transform: translateY(-1px);
     }
 
     .vc-button-secondary {
-      background: #f3f4f6;
-      color: #374151;
+      background: var(--vc-gray-100);
+      color: var(--vc-gray-700);
+      border: 1px solid var(--vc-gray-200);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     }
 
     .vc-button-secondary:hover {
-      background: #e5e7eb;
+      background: var(--vc-gray-200);
+      transform: translateY(-1px);
+      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
     }
 
     .vc-toggle {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 56px;
-      height: 56px;
-      border-radius: 50%;
-      background: #3b82f6;
-      color: white;
-      border: none;
+      bottom: 24px;
+      right: 24px;
+      padding: 14px 24px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      color: var(--vc-gray-900);
+      border: 1px solid rgba(0, 0, 0, 0.08);
       cursor: pointer;
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+      box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.12),
+        0 0 0 1px rgba(255, 255, 255, 0.5) inset;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: system-ui, -apple-system, sans-serif;
       z-index: 1000000;
-      transition: all 0.3s;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      gap: 8px;
+      letter-spacing: -0.01em;
     }
 
     .vc-toggle:hover {
-      background: #2563eb;
-      transform: scale(1.05);
+      transform: translateY(-3px) scale(1.02);
+      box-shadow:
+        0 12px 32px rgba(0, 0, 0, 0.16),
+        0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+    }
+
+    .vc-toggle:active {
+      transform: translateY(-1px) scale(0.98);
+      transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .vc-toggle.vc-active {
-      background: #ef4444;
+      background: linear-gradient(135deg, var(--vc-danger) 0%, #dc2626 100%);
+      color: white;
+      border-color: rgba(255, 255, 255, 0.2);
+      box-shadow:
+        0 8px 24px rgba(239, 68, 68, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+    }
+
+    .vc-toggle.vc-active:hover {
+      box-shadow:
+        0 12px 32px rgba(239, 68, 68, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+    }
+
+    .vc-toggle.vc-processing {
+      background: rgba(255, 255, 255, 0.95);
+      color: var(--vc-primary);
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .vc-toggle.vc-complete {
+      background: rgba(255, 255, 255, 0.95);
+      color: var(--vc-success);
+      animation: vc-success-pulse 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes vc-success-pulse {
+      0%, 100% {
+        transform: translateY(-3px) scale(1);
+      }
+      50% {
+        transform: translateY(-3px) scale(1.05);
+      }
+    }
+
+    @keyframes vc-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .vc-spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border: 2.5px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: vc-spin 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
     }
 
     .vc-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
       z-index: 999999;
       display: none;
+      opacity: 0;
+      transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .vc-backdrop.vc-show {
       display: block;
+      animation: vc-backdropIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+
+    @keyframes vc-backdropIn {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
     }
   `;
 
@@ -218,8 +400,8 @@
 
   const toggle = document.createElement('button');
   toggle.className = 'vc-toggle';
-  toggle.textContent = '👁️';
-  toggle.title = 'Toggle Visual Claude selection mode (Drag to select area)';
+  toggle.innerHTML = 'Select';
+  toggle.title = 'Click to start selecting elements on the page';
 
   document.body.appendChild(overlay);
   document.body.appendChild(backdrop);
@@ -391,12 +573,42 @@
       console.log('[Visual Claude] WebSocket state: OPEN, sending...');
       messageWs.send(JSON.stringify(message));
       console.log('[Visual Claude] ✓ Message sent to server');
+
+      // Update button to show processing
+      setButtonStatus('processing');
     } else {
       console.error('[Visual Claude] ✗ WebSocket not connected, state:', messageWs ? messageWs.readyState : 'null');
     }
 
     hidePopup();
     toggleSelectionMode();
+  }
+
+  // Update button status
+  function setButtonStatus(status) {
+    // Remove all status classes
+    toggle.classList.remove('vc-processing', 'vc-complete');
+
+    switch(status) {
+      case 'select':
+        toggle.innerHTML = 'Select';
+        toggle.disabled = false;
+        toggle.style.cursor = 'pointer';
+        break;
+      case 'processing':
+        toggle.innerHTML = '<span class="vc-spinner"></span>Processing...';
+        toggle.classList.add('vc-processing');
+        toggle.disabled = true;
+        toggle.style.cursor = 'default';
+        break;
+      case 'done':
+        toggle.innerHTML = 'Done ✓';
+        toggle.classList.add('vc-complete');
+        toggle.disabled = true;
+        // Auto-reset after 2 seconds
+        setTimeout(() => setButtonStatus('select'), 2000);
+        break;
+    }
   }
 
   // Toggle selection mode
@@ -559,6 +771,23 @@
     messageWs = new WebSocket(`${protocol}//${host}/__visual-claude/ws/message`);
     messageWs.onopen = () => {
       console.log('[Visual Claude] Connected to Claude Code');
+    };
+
+    messageWs.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('[Visual Claude] Message from server:', data);
+
+        // Listen for completion status
+        if (data.status === 'received') {
+          // Message was received by server (already showing "Processing...")
+        } else if (data.status === 'complete') {
+          // Claude finished processing
+          setButtonStatus('done');
+        }
+      } catch (err) {
+        console.error('[Visual Claude] Failed to parse server message:', err);
+      }
     };
 
     messageWs.onerror = (error) => {

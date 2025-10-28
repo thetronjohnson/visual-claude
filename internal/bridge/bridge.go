@@ -2,11 +2,10 @@ package bridge
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
-	"github.com/kiran/visual-claude/internal/pty"
-	"github.com/kiran/visual-claude/internal/status"
+	"github.com/thetronjohnson/visual-claude/internal/pty"
+	"github.com/thetronjohnson/visual-claude/internal/status"
 )
 
 // ElementInfo represents information about a selected HTML element
@@ -54,44 +53,13 @@ func NewBridge(ptyManager *pty.Manager, verbose bool, display *status.Display) *
 
 // HandleMessage processes a message from the browser and sends it to Claude Code
 func (b *Bridge) HandleMessage(msg Message) error {
-	fmt.Fprintf(os.Stderr, "[Bridge] HandleMessage called - Instruction: \"%s\"\n", msg.Instruction)
-	fmt.Fprintf(os.Stderr, "[Bridge] Area: %dx%d at (%d,%d), %d elements\n",
-		msg.Area.Width, msg.Area.Height, msg.Area.X, msg.Area.Y, msg.Area.ElementCount)
-
-	// Display instruction received with area info
-	areaInfo := fmt.Sprintf("Area: %dx%dpx with %d elements",
-		msg.Area.Width, msg.Area.Height, msg.Area.ElementCount)
-	if b.display != nil {
-		b.display.PrintInstructionReceived(areaInfo, msg.Instruction)
-	}
-
 	// Format the message for Claude Code
 	formattedMsg := b.formatMessage(msg)
-	fmt.Fprintf(os.Stderr, "[Bridge] Formatted message (%d bytes):\n%s\n", len(formattedMsg), formattedMsg)
 
-	if b.verbose {
-		fmt.Printf("[Bridge] Processing message: %s\n", msg.Instruction)
-		fmt.Printf("[Bridge] Area: %d elements in %dx%d selection\n",
-			msg.Area.ElementCount, msg.Area.Width, msg.Area.Height)
-	}
-
-	// Display sending status
-	if b.display != nil {
-		b.display.PrintSentToClaude()
-	}
-
-	fmt.Fprintf(os.Stderr, "[Bridge] Calling PTY SendMessage...\n")
-
-	// Send to Claude Code FIRST
+	// Send to Claude Code
 	if err := b.ptyManager.SendMessage(formattedMsg); err != nil {
-		fmt.Fprintf(os.Stderr, "[Bridge] ✗ PTY SendMessage failed: %v\n", err)
-		if b.display != nil {
-			b.display.PrintError(err)
-		}
 		return fmt.Errorf("failed to send message to Claude Code: %w", err)
 	}
-
-	fmt.Fprintf(os.Stderr, "[Bridge] ✓ PTY SendMessage completed successfully\n")
 
 	return nil
 }

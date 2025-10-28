@@ -8,8 +8,16 @@ import (
 	"os/exec"
 	"sync"
 
-	"github.com/kiran/visual-claude/internal/status"
+	"github.com/thetronjohnson/visual-claude/internal/status"
+	tea "github.com/charmbracelet/bubbletea"
 )
+
+// StreamEvent represents an event to send to the TUI
+type StreamEvent struct {
+	Type    string
+	Content string
+	Data    map[string]interface{}
+}
 
 // Manager manages Claude Code execution using --print mode
 type Manager struct {
@@ -18,6 +26,7 @@ type Manager struct {
 	mu         sync.Mutex
 	verbose    bool
 	display    *status.Display
+	program    *tea.Program // Bubble Tea program for sending events
 }
 
 // NewManager creates a new manager for Claude Code
@@ -29,21 +38,20 @@ func NewManager(projectDir, claudePath string, verbose bool, display *status.Dis
 		display:    display,
 	}
 
-	if verbose {
-		fmt.Fprintf(os.Stderr, "[Manager] Initialized for Claude Code at: %s\n", claudePath)
-		fmt.Fprintf(os.Stderr, "[Manager] Project directory: %s\n", projectDir)
-	}
+	// Verbose logging removed - TUI provides all feedback
 
 	return manager, nil
+}
+
+// SetProgram sets the Bubble Tea program for sending UI updates
+func (m *Manager) SetProgram(p *tea.Program) {
+	m.program = p
 }
 
 // SendMessage sends a message to Claude Code using --print mode with streaming JSON output
 func (m *Manager) SendMessage(message string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	fmt.Fprintf(os.Stderr, "[Manager] SendMessage called\n")
-	fmt.Fprintf(os.Stderr, "[Manager] Message (%d bytes): %q\n", len(message), message)
 
 	// Run Claude Code with streaming JSON output
 	// --output-format stream-json: Outputs JSONL (one JSON object per line)
@@ -63,10 +71,8 @@ func (m *Manager) SendMessage(message string) error {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
-	// Connect stderr directly for error messages
-	cmd.Stderr = os.Stderr
-
-	fmt.Fprintf(os.Stderr, "[Manager] Starting Claude Code with stream-json output...\n")
+	// Discard stderr to keep terminal clean (only TUI output)
+	cmd.Stderr = nil
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -78,25 +84,34 @@ func (m *Manager) SendMessage(message string) error {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if err := m.handleStreamLine(line); err != nil {
-			fmt.Fprintf(os.Stderr, "[Manager] Warning: failed to parse line: %v\n", err)
+			// Silently skip unparseable lines (keeps TUI clean)
+			if m.verbose {
+				fmt.Fprintf(os.Stderr, "[Manager] Warning: failed to parse line: %v\n", err)
+			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "[Manager] Error reading output: %v\n", err)
+		// Only log errors in verbose mode
+		if m.verbose {
+			fmt.Fprintf(os.Stderr, "[Manager] Error reading output: %v\n", err)
+		}
 	}
 
 	// Wait for command to complete
 	if err := cmd.Wait(); err != nil {
-		fmt.Fprintf(os.Stderr, "[Manager] ✗ Execution failed: %v\n", err)
 		return fmt.Errorf("Claude Code execution failed: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "[Manager] ✓ Execution completed successfully\n")
+	// Send completion event to TUI
+	if m.program != nil {
+		m.program.Send(StreamEvent{Type: "complete"})
+	}
+
 	return nil
 }
 
-// handleStreamLine parses and displays a single line of JSONL output from Claude Code
+// handleStreamLine parses a single line of JSONL output from Claude Code and sends to TUI
 func (m *Manager) handleStreamLine(line string) error {
 	// Parse the JSON line
 	var event map[string]interface{}
@@ -110,33 +125,47 @@ func (m *Manager) handleStreamLine(line string) error {
 		return fmt.Errorf("missing or invalid 'type' field")
 	}
 
-	// Handle different event types
-	switch eventType {
-	case "content":
-		// Claude's text response
-		if content, ok := event["content"].(string); ok {
-			fmt.Print(content)
+	// Send event to TUI if program is set
+	if m.program != nil {
+		streamEvent := StreamEvent{
+			Type: eventType,
+			Data: event,
 		}
 
-	case "tool_use":
-		// Claude is using a tool (Edit, Bash, etc.)
-		toolName, _ := event["name"].(string)
-		fmt.Fprintf(os.Stderr, "\n🔧 Tool: %s\n", toolName)
-
-	case "tool_result":
-		// Tool execution completed
-		fmt.Fprintf(os.Stderr, "✓ Tool completed\n")
-
-	case "error":
-		// Error occurred
-		if errMsg, ok := event["error"].(string); ok {
-			fmt.Fprintf(os.Stderr, "❌ Error: %s\n", errMsg)
+		// Extract content for specific event types
+		switch eventType {
+		case "content":
+			if content, ok := event["content"].(string); ok {
+				streamEvent.Content = content
+			}
+		case "tool_use":
+			if toolName, ok := event["name"].(string); ok {
+				streamEvent.Content = toolName
+			}
+		case "error":
+			if errMsg, ok := event["error"].(string); ok {
+				streamEvent.Content = errMsg
+			}
 		}
 
-	default:
-		// Debug: show unknown event types in verbose mode
-		if m.verbose {
-			fmt.Fprintf(os.Stderr, "[Debug] Event type: %s\n", eventType)
+		// Send to TUI
+		m.program.Send(streamEvent)
+	} else {
+		// Fallback to console output if no TUI
+		switch eventType {
+		case "content":
+			if content, ok := event["content"].(string); ok {
+				fmt.Print(content)
+			}
+		case "tool_use":
+			toolName, _ := event["name"].(string)
+			fmt.Fprintf(os.Stderr, "\n🔧 Tool: %s\n", toolName)
+		case "tool_result":
+			fmt.Fprintf(os.Stderr, "✓ Tool completed\n")
+		case "error":
+			if errMsg, ok := event["error"].(string); ok {
+				fmt.Fprintf(os.Stderr, "❌ Error: %s\n", errMsg)
+			}
 		}
 	}
 
@@ -145,8 +174,5 @@ func (m *Manager) handleStreamLine(line string) error {
 
 // Close cleanup (no-op since we're not keeping a persistent process)
 func (m *Manager) Close() error {
-	if m.verbose {
-		fmt.Fprintf(os.Stderr, "[Manager] Close called (no-op in --print mode)\n")
-	}
 	return nil
 }

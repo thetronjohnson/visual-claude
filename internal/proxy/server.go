@@ -9,12 +9,11 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/kiran/visual-claude/internal/bridge"
-	"github.com/kiran/visual-claude/internal/watcher"
+	"github.com/thetronjohnson/visual-claude/internal/bridge"
+	"github.com/thetronjohnson/visual-claude/internal/watcher"
 )
 
 //go:embed inject.js
@@ -154,39 +153,31 @@ func (s *Server) handleMessageWebSocket(w http.ResponseWriter, r *http.Request) 
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			if s.verbose {
-				fmt.Printf("[Proxy] WebSocket read error: %v\n", err)
-			}
 			break
 		}
-
-		fmt.Fprintf(os.Stderr, "[Proxy] WebSocket message received (%d bytes)\n", len(message))
 
 		// Parse the message
 		var msg bridge.Message
 		if err := json.Unmarshal(message, &msg); err != nil {
-			fmt.Fprintf(os.Stderr, "[Proxy] ✗ Failed to parse JSON: %v\n", err)
 			if s.verbose {
 				fmt.Printf("[Proxy] Failed to parse message: %v\n", err)
 			}
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "[Proxy] ✓ Parsed message - Instruction: \"%s\", Area: %dx%d with %d elements\n",
-			msg.Instruction, msg.Area.Width, msg.Area.Height, msg.Area.ElementCount)
-
-		// Handle the message
-		if err := s.bridge.HandleMessage(msg); err != nil {
-			fmt.Fprintf(os.Stderr, "[Proxy] ✗ Bridge error: %v\n", err)
-			if s.verbose {
-				fmt.Printf("[Proxy] Failed to handle message: %v\n", err)
-			}
-		} else {
-			fmt.Fprintf(os.Stderr, "[Proxy] ✓ Message forwarded to bridge\n")
-		}
-
-		// Send acknowledgment
+		// Send acknowledgment that message was received
 		conn.WriteJSON(map[string]string{"status": "received"})
+
+		// Handle the message (TUI will show all feedback)
+		// This blocks until Claude Code finishes
+		err = s.bridge.HandleMessage(msg)
+
+		// Send completion status
+		if err != nil {
+			conn.WriteJSON(map[string]string{"status": "error", "error": err.Error()})
+		} else {
+			conn.WriteJSON(map[string]string{"status": "complete"})
+		}
 	}
 }
 
