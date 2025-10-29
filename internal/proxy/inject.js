@@ -115,7 +115,7 @@
     .vc-inline-input {
       position: fixed;
       background: white;
-      border: 2px dotted black;
+      border: 2.5px solid #333333;
       border-radius: 8px;
       padding: 12px;
       z-index: 1000000;
@@ -132,7 +132,7 @@
     .vc-inline-badge {
       font-size: 11px;
       font-weight: 600;
-      color: var(--vc-gray-600);
+      color: #333333;
       margin-bottom: 8px;
       font-family: system-ui, -apple-system, sans-serif;
     }
@@ -140,18 +140,18 @@
     .vc-inline-text {
       width: 100%;
       padding: 10px;
-      border: 2px solid var(--vc-gray-200);
+      border: 2px solid #333333;
       border-radius: 6px;
       font-size: 14px;
       font-family: system-ui, -apple-system, sans-serif;
       line-height: 1.4;
       resize: none;
-      transition: border-color 0.2s ease;
+      transition: none;
     }
 
     .vc-inline-text:focus {
       outline: none;
-      border-color: var(--vc-primary);
+      border-color: #333333;
     }
 
     .vc-inline-text::placeholder {
@@ -166,14 +166,13 @@
     }
 
     .vc-inline-button {
-      padding: 8px 16px;
+      padding: 6px 12px;
       border-radius: 6px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
       font-family: system-ui, -apple-system, sans-serif;
-      border: 2px dotted transparent;
     }
 
     .vc-inline-button:active {
@@ -181,23 +180,23 @@
     }
 
     .vc-inline-button-send {
-      background: var(--vc-primary);
-      color: white;
-      border: 2px dotted black;
+      background: #F19E38;
+      color: #000000;
+      border: 2.5px solid #333333;
     }
 
     .vc-inline-button-send:hover {
-      opacity: 0.8;
+      opacity: 0.85;
     }
 
     .vc-inline-button-cancel {
       background: var(--vc-gray-200);
-      color: var(--vc-gray-700);
-      border: 2px dotted transparent;
+      color: #333333;
+      border: 2.5px solid #333333;
     }
 
     .vc-inline-button-cancel:hover {
-      opacity: 0.8;
+      opacity: 0.85;
     }
 
     .vc-status-indicator {
