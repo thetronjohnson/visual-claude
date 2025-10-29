@@ -24,6 +24,10 @@
   // Click handling state
   let clickTimeout = null;
 
+  // Processing timeout handling
+  let processingTimeout = null;
+  const PROCESSING_TIMEOUT = 300000; // 5 minutes max
+
   // Mode toggle state
   let isEditMode = true;
   const EDIT_MODE_KEY = 'vc-edit-mode';
@@ -719,15 +723,40 @@
       statusIndicator.innerHTML = '<span class="vc-spinner"></span>Processing...';
       statusIndicator.classList.add('vc-show', 'vc-processing');
       isProcessing = true;
+
+      // Set timeout in case completion message is never received
+      if (processingTimeout) {
+        clearTimeout(processingTimeout);
+      }
+      processingTimeout = setTimeout(() => {
+        console.warn('[Visual Claude] ⚠️  Processing timeout - forcing reload');
+        window.location.reload();
+      }, PROCESSING_TIMEOUT);
+
     } else if (status === 'complete') {
+      // Clear processing timeout
+      if (processingTimeout) {
+        clearTimeout(processingTimeout);
+        processingTimeout = null;
+      }
+
       statusIndicator.innerHTML = 'Done ✓';
       statusIndicator.classList.add('vc-show', 'vc-complete');
       isProcessing = false;
-      // Hide after animation
+
+      // Auto-reload after completion to ensure fresh page state
+      console.log('[Visual Claude] Task completed, reloading in 1.5 seconds...');
       setTimeout(() => {
-        statusIndicator.classList.remove('vc-show', 'vc-complete');
-      }, 2500);
+        window.location.reload();
+      }, 1500);
+
     } else {
+      // Clear processing timeout
+      if (processingTimeout) {
+        clearTimeout(processingTimeout);
+        processingTimeout = null;
+      }
+
       statusIndicator.classList.remove('vc-show');
       isProcessing = false;
     }
@@ -797,6 +826,12 @@
     if (clickTimeout) {
       clearTimeout(clickTimeout);
       clickTimeout = null;
+    }
+
+    // Cancel any processing timeout
+    if (processingTimeout) {
+      clearTimeout(processingTimeout);
+      processingTimeout = null;
     }
 
     // Clean up any active UI elements
@@ -1402,22 +1437,51 @@
         } else if (data.status === 'error') {
           // Error occurred
           console.log('[Visual Claude] ❌ Error occurred for message ID:', data.id, 'Error:', data.error);
-          setStatus('error');
+          console.error('[Visual Claude] Error details:', data.error);
+          // Show error and reload after a delay
+          statusIndicator.innerHTML = 'Error - Reloading...';
+          statusIndicator.classList.add('vc-show');
+          statusIndicator.style.background = '#ef4444';
+          statusIndicator.style.color = 'white';
           currentMessageId = null; // Clear current message ID
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
         } else {
           console.warn('[Visual Claude] ⚠️  Unknown status received:', data.status);
         }
       } catch (err) {
         console.error('[Visual Claude] Failed to parse server message:', err);
+        // If we can't parse the message and we're processing, assume error
+        if (isProcessing) {
+          console.error('[Visual Claude] Parse error during processing, reloading...');
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        }
       }
     };
 
     messageWs.onerror = (error) => {
       console.error('[Visual Claude] Message WebSocket error:', error);
+      // If we're processing and WebSocket errors, reload after delay
+      if (isProcessing) {
+        console.error('[Visual Claude] WebSocket error during processing, reloading...');
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }
     };
 
     messageWs.onclose = () => {
       console.log('[Visual Claude] Message WebSocket closed');
+      // If we're processing and WebSocket closes unexpectedly, reload
+      if (isProcessing) {
+        console.warn('[Visual Claude] WebSocket closed during processing, reloading...');
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }
     };
   }
 
