@@ -19,6 +19,9 @@ import (
 //go:embed inject.js
 var clientScript embed.FS
 
+//go:embed cursor.svg
+var cursorAsset []byte
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow all origins for development
@@ -74,6 +77,9 @@ func (s *Server) Start() error {
 	// Serve the injected JavaScript
 	mux.HandleFunc("/__visual-claude/inject.js", s.handleInjectScript)
 
+	// Serve the custom cursor asset
+	mux.HandleFunc("/__visual-claude/cursor.svg", s.handleCursorAsset)
+
 	// WebSocket endpoint for live reload
 	mux.HandleFunc("/__visual-claude/ws/reload", s.handleReloadWebSocket)
 
@@ -108,6 +114,13 @@ func (s *Server) handleInjectScript(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/javascript")
 	w.Write(content)
+}
+
+// handleCursorAsset serves the custom cursor SVG
+func (s *Server) handleCursorAsset(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(cursorAsset)
 }
 
 // handleReloadWebSocket handles WebSocket connections for live reload

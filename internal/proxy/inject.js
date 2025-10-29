@@ -2,13 +2,19 @@
   'use strict';
 
   // State
-  let isSelectionMode = false;
   let isDragging = false;
   let dragStart = null;
   let dragEnd = null;
+  let dragStartTime = null;
   let selectedElements = [];
   let reloadWs = null;
   let messageWs = null;
+  let isProcessing = false;
+
+  // Hover state
+  let currentHoveredElement = null;
+  let lastHoverCheckTime = 0;
+  const HOVER_CHECK_THROTTLE = 16; // ~60fps
 
   // Create UI elements with CSS custom properties
   const styles = `
@@ -26,16 +32,10 @@
       --vc-gray-900: #1f2937;
     }
 
-    .vc-overlay {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 999999;
-      cursor: crosshair;
-    }
-
-    .vc-overlay.vc-active {
-      pointer-events: auto;
+    .vc-element-highlight {
+      outline: 2px solid var(--vc-primary) !important;
+      outline-offset: 2px !important;
+      transition: outline 0.15s ease !important;
     }
 
     @keyframes vc-dash {
@@ -112,215 +112,133 @@
       }
     }
 
-    .vc-popup {
+    .vc-inline-input {
       position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%) scale(1);
-      background: rgba(255, 255, 255, 0.98);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 16px;
-      box-shadow:
-        0 25px 50px rgba(0, 0, 0, 0.15),
-        0 0 0 1px rgba(0, 0, 0, 0.05),
-        0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-      padding: 28px;
-      width: 480px;
-      max-width: 90vw;
+      background: white;
+      border: 2px dotted black;
+      border-radius: 8px;
+      padding: 12px;
       z-index: 1000000;
       display: none;
+      min-width: 300px;
+      max-width: 400px;
     }
 
-    .vc-popup.vc-show {
+    .vc-inline-input.vc-show {
       display: block;
-      animation: vc-modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      animation: vc-fadeIn 0.2s ease;
     }
 
-    @keyframes vc-modalIn {
-      from {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0.9);
-      }
-      to {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1);
-      }
-    }
-
-    .vc-popup-header {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 18px;
-      color: var(--vc-gray-900);
-      letter-spacing: -0.02em;
-    }
-
-    .vc-popup-selection-info {
-      font-size: 13px;
+    .vc-inline-badge {
+      font-size: 11px;
+      font-weight: 600;
       color: var(--vc-gray-600);
-      margin-bottom: 18px;
-      padding: 14px 16px;
-      background: linear-gradient(135deg, var(--vc-gray-50) 0%, var(--vc-gray-100) 100%);
-      border-radius: 10px;
+      margin-bottom: 8px;
       font-family: system-ui, -apple-system, sans-serif;
-      font-weight: 500;
-      border: 1px solid var(--vc-gray-200);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
 
-    .vc-popup-textarea {
+    .vc-inline-text {
       width: 100%;
-      min-height: 110px;
-      padding: 14px;
+      padding: 10px;
       border: 2px solid var(--vc-gray-200);
-      border-radius: 10px;
+      border-radius: 6px;
       font-size: 14px;
       font-family: system-ui, -apple-system, sans-serif;
-      line-height: 1.6;
-      resize: vertical;
-      margin-bottom: 20px;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      line-height: 1.4;
+      resize: none;
+      transition: border-color 0.2s ease;
     }
 
-    .vc-popup-textarea:focus {
+    .vc-inline-text:focus {
       outline: none;
       border-color: var(--vc-primary);
-      box-shadow:
-        0 0 0 3px rgba(59, 130, 246, 0.1),
-        0 2px 8px rgba(59, 130, 246, 0.15);
-      transform: translateY(-1px);
     }
 
-    .vc-popup-textarea::placeholder {
+    .vc-inline-text::placeholder {
       color: var(--vc-gray-400);
     }
 
-    .vc-popup-buttons {
+    .vc-inline-buttons {
       display: flex;
-      gap: 12px;
+      gap: 8px;
+      margin-top: 8px;
       justify-content: flex-end;
     }
 
-    .vc-button {
-      padding: 11px 24px;
-      border-radius: 10px;
-      border: none;
-      font-size: 14px;
+    .vc-inline-button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.2s ease;
       font-family: system-ui, -apple-system, sans-serif;
-      position: relative;
-      overflow: hidden;
+      border: 2px dotted transparent;
     }
 
-    .vc-button:active {
-      transform: scale(0.97);
+    .vc-inline-button:active {
+      transform: scale(0.95);
     }
 
-    .vc-button-primary {
-      background: linear-gradient(135deg, var(--vc-primary) 0%, #2563eb 100%);
+    .vc-inline-button-send {
+      background: var(--vc-primary);
       color: white;
-      box-shadow:
-        0 4px 12px rgba(59, 130, 246, 0.3),
-        0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+      border: 2px dotted black;
     }
 
-    .vc-button-primary:hover {
-      box-shadow:
-        0 6px 20px rgba(59, 130, 246, 0.4),
-        0 0 0 1px rgba(255, 255, 255, 0.2) inset;
-      transform: translateY(-1px);
+    .vc-inline-button-send:hover {
+      opacity: 0.8;
     }
 
-    .vc-button-secondary {
-      background: var(--vc-gray-100);
-      color: var(--vc-gray-700);
-      border: 1px solid var(--vc-gray-200);
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    }
-
-    .vc-button-secondary:hover {
+    .vc-inline-button-cancel {
       background: var(--vc-gray-200);
-      transform: translateY(-1px);
-      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+      color: var(--vc-gray-700);
+      border: 2px dotted transparent;
     }
 
-    .vc-toggle {
+    .vc-inline-button-cancel:hover {
+      opacity: 0.8;
+    }
+
+    .vc-status-indicator {
       position: fixed;
       bottom: 24px;
       right: 24px;
-      padding: 14px 24px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      color: var(--vc-gray-900);
-      border: 1px solid rgba(0, 0, 0, 0.08);
-      cursor: pointer;
-      box-shadow:
-        0 8px 24px rgba(0, 0, 0, 0.12),
-        0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      padding: 12px 20px;
+      border-radius: 8px;
+      background: white;
+      color: #1f2937;
+      border: 2px dotted black;
       font-size: 14px;
       font-weight: 600;
       font-family: system-ui, -apple-system, sans-serif;
       z-index: 1000000;
-      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      display: none;
+      align-items: center;
       gap: 8px;
-      letter-spacing: -0.01em;
     }
 
-    .vc-toggle:hover {
-      transform: translateY(-3px) scale(1.02);
-      box-shadow:
-        0 12px 32px rgba(0, 0, 0, 0.16),
-        0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+    .vc-status-indicator.vc-show {
+      display: flex;
     }
 
-    .vc-toggle:active {
-      transform: translateY(-1px) scale(0.98);
-      transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .vc-toggle.vc-active {
-      background: linear-gradient(135deg, var(--vc-danger) 0%, #dc2626 100%);
+    .vc-status-indicator.vc-processing {
+      background: #3b82f6;
       color: white;
-      border-color: rgba(255, 255, 255, 0.2);
-      box-shadow:
-        0 8px 24px rgba(239, 68, 68, 0.4),
-        0 0 0 1px rgba(255, 255, 255, 0.2) inset;
     }
 
-    .vc-toggle.vc-active:hover {
-      box-shadow:
-        0 12px 32px rgba(239, 68, 68, 0.5),
-        0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+    .vc-status-indicator.vc-complete {
+      background: #22c55e;
+      color: white;
+      animation: vc-fadeOut 0.5s ease 2s forwards;
     }
 
-    .vc-toggle.vc-processing {
-      background: rgba(255, 255, 255, 0.95);
-      color: var(--vc-primary);
-      cursor: default;
-      pointer-events: none;
-    }
-
-    .vc-toggle.vc-complete {
-      background: rgba(255, 255, 255, 0.95);
-      color: var(--vc-success);
-      animation: vc-success-pulse 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-
-    @keyframes vc-success-pulse {
-      0%, 100% {
-        transform: translateY(-3px) scale(1);
+    @keyframes vc-fadeOut {
+      from {
+        opacity: 1;
       }
-      50% {
-        transform: translateY(-3px) scale(1.05);
+      to {
+        opacity: 0;
       }
     }
 
@@ -339,31 +257,6 @@
       animation: vc-spin 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
     }
 
-    .vc-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.4);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      z-index: 999999;
-      display: none;
-      opacity: 0;
-      transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .vc-backdrop.vc-show {
-      display: block;
-      animation: vc-backdropIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-    }
-
-    @keyframes vc-backdropIn {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
-    }
   `;
 
   // Inject styles
@@ -372,9 +265,6 @@
   document.head.appendChild(styleSheet);
 
   // Create UI
-  const overlay = document.createElement('div');
-  overlay.className = 'vc-overlay';
-
   const selectionRect = document.createElement('div');
   selectionRect.className = 'vc-selection-rect';
   document.body.appendChild(selectionRect);
@@ -383,30 +273,26 @@
   selectionInfo.className = 'vc-selection-info';
   document.body.appendChild(selectionInfo);
 
-  const backdrop = document.createElement('div');
-  backdrop.className = 'vc-backdrop';
-
-  const popup = document.createElement('div');
-  popup.className = 'vc-popup';
-  popup.innerHTML = `
-    <div class="vc-popup-header">Visual Claude</div>
-    <div class="vc-popup-selection-info"></div>
-    <textarea class="vc-popup-textarea" placeholder="What would you like Claude to do with this selection?"></textarea>
-    <div class="vc-popup-buttons">
-      <button class="vc-button vc-button-secondary" data-action="cancel">Cancel</button>
-      <button class="vc-button vc-button-primary" data-action="send">Send to Claude</button>
+  const inlineInput = document.createElement('div');
+  inlineInput.className = 'vc-inline-input';
+  inlineInput.innerHTML = `
+    <div class="vc-inline-badge"></div>
+    <textarea class="vc-inline-text" rows="2" placeholder="What would you like Claude to do?"></textarea>
+    <div class="vc-inline-buttons">
+      <button class="vc-inline-button vc-inline-button-cancel" data-action="cancel">Cancel</button>
+      <button class="vc-inline-button vc-inline-button-send" data-action="send">Send</button>
     </div>
   `;
+  document.body.appendChild(inlineInput);
 
-  const toggle = document.createElement('button');
-  toggle.className = 'vc-toggle';
-  toggle.innerHTML = 'Select';
-  toggle.title = 'Click to start selecting elements on the page';
+  const statusIndicator = document.createElement('div');
+  statusIndicator.className = 'vc-status-indicator';
+  statusIndicator.innerHTML = '<span class="vc-spinner"></span>Processing...';
+  document.body.appendChild(statusIndicator);
 
-  document.body.appendChild(overlay);
-  document.body.appendChild(backdrop);
-  document.body.appendChild(popup);
-  document.body.appendChild(toggle);
+  // Set custom cursor globally with fallback
+  const cursorURL = '/__visual-claude/cursor.svg';
+  document.body.style.cursor = `url('${cursorURL}') 8 6, auto`;
 
   // Get elements within bounds
   function getElementsInBounds(bounds) {
@@ -415,7 +301,7 @@
 
     allElements.forEach(el => {
       // Skip our own UI elements
-      if (el.closest('.vc-overlay, .vc-selection-rect, .vc-selection-info, .vc-popup, .vc-backdrop, .vc-toggle')) {
+      if (el.closest('.vc-selection-rect, .vc-selection-info, .vc-inline-input, .vc-status-indicator')) {
         return;
       }
 
@@ -503,8 +389,8 @@
     }
   }
 
-  // Show popup with selection info
-  function showPopup(bounds, elements) {
+  // Show inline input with selection info
+  function showInlineInput(cursorX, cursorY, bounds, elements) {
     selectedElements = elements;
 
     const areaSize = `${Math.round(bounds.width)}×${Math.round(bounds.height)}px`;
@@ -516,19 +402,47 @@
       elements: elements.map(el => el.tagName)
     });
 
-    popup.querySelector('.vc-popup-selection-info').textContent =
-      `Selected: ${elementCount} element${elementCount !== 1 ? 's' : ''} in ${areaSize} area`;
-    popup.querySelector('.vc-popup-textarea').value = '';
-    popup.querySelector('.vc-popup-textarea').focus();
+    // Update badge
+    inlineInput.querySelector('.vc-inline-badge').textContent =
+      `${elementCount} element${elementCount !== 1 ? 's' : ''} · ${areaSize}`;
 
-    popup.classList.add('vc-show');
-    backdrop.classList.add('vc-show');
+    // Clear and focus input
+    const textArea = inlineInput.querySelector('.vc-inline-text');
+    textArea.value = '';
+
+    // Position near cursor with smart boundaries
+    const inputWidth = 320;
+    const inputHeight = 140;
+    const padding = 20;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let left = cursorX + padding;
+    let top = cursorY + padding;
+
+    // Keep within viewport bounds
+    if (left + inputWidth > viewportWidth - padding) {
+      left = cursorX - inputWidth - padding;
+    }
+    if (top + inputHeight > viewportHeight - padding) {
+      top = cursorY - inputHeight - padding;
+    }
+
+    // Ensure minimum distance from edges
+    left = Math.max(padding, Math.min(left, viewportWidth - inputWidth - padding));
+    top = Math.max(padding, Math.min(top, viewportHeight - inputHeight - padding));
+
+    inlineInput.style.left = left + 'px';
+    inlineInput.style.top = top + 'px';
+    inlineInput.classList.add('vc-show');
+
+    // Focus after a small delay to ensure visibility
+    setTimeout(() => textArea.focus(), 100);
   }
 
-  // Hide popup
-  function hidePopup() {
-    popup.classList.remove('vc-show');
-    backdrop.classList.remove('vc-show');
+  // Hide inline input
+  function hideInlineInput() {
+    inlineInput.classList.remove('vc-show');
     selectedElements = [];
   }
 
@@ -574,91 +488,94 @@
       messageWs.send(JSON.stringify(message));
       console.log('[Visual Claude] ✓ Message sent to server');
 
-      // Update button to show processing
-      setButtonStatus('processing');
+      // Show processing status
+      isProcessing = true;
+      statusIndicator.classList.add('vc-show', 'vc-processing');
     } else {
       console.error('[Visual Claude] ✗ WebSocket not connected, state:', messageWs ? messageWs.readyState : 'null');
     }
 
-    hidePopup();
-    toggleSelectionMode();
+    hideInlineInput();
   }
 
-  // Update button status
-  function setButtonStatus(status) {
-    // Remove all status classes
-    toggle.classList.remove('vc-processing', 'vc-complete');
+  // Update status indicator
+  function setStatus(status) {
+    statusIndicator.classList.remove('vc-processing', 'vc-complete');
 
-    switch(status) {
-      case 'select':
-        toggle.innerHTML = 'Select';
-        toggle.disabled = false;
-        toggle.style.cursor = 'pointer';
-        break;
-      case 'processing':
-        toggle.innerHTML = '<span class="vc-spinner"></span>Processing...';
-        toggle.classList.add('vc-processing');
-        toggle.disabled = true;
-        toggle.style.cursor = 'default';
-        break;
-      case 'done':
-        toggle.innerHTML = 'Done ✓';
-        toggle.classList.add('vc-complete');
-        toggle.disabled = true;
-        // Auto-reset after 2 seconds
-        setTimeout(() => setButtonStatus('select'), 2000);
-        break;
-    }
-  }
-
-  // Toggle selection mode
-  function toggleSelectionMode() {
-    isSelectionMode = !isSelectionMode;
-    overlay.classList.toggle('vc-active', isSelectionMode);
-    toggle.classList.toggle('vc-active', isSelectionMode);
-    document.body.style.cursor = isSelectionMode ? 'crosshair' : '';
-
-    if (!isSelectionMode) {
-      // Reset state
-      isDragging = false;
-      dragStart = null;
-      dragEnd = null;
-      selectionRect.classList.remove('vc-show');
-      selectionInfo.classList.remove('vc-show');
+    if (status === 'processing') {
+      statusIndicator.innerHTML = '<span class="vc-spinner"></span>Processing...';
+      statusIndicator.classList.add('vc-show', 'vc-processing');
+      isProcessing = true;
+    } else if (status === 'complete') {
+      statusIndicator.innerHTML = 'Done ✓';
+      statusIndicator.classList.add('vc-show', 'vc-complete');
+      isProcessing = false;
+      // Hide after animation
+      setTimeout(() => {
+        statusIndicator.classList.remove('vc-show', 'vc-complete');
+      }, 2500);
+    } else {
+      statusIndicator.classList.remove('vc-show');
+      isProcessing = false;
     }
   }
 
   // Mouse down handler - start drag
   function handleMouseDown(e) {
-    if (!isSelectionMode) return;
-    if (e.target.closest('.vc-popup, .vc-backdrop, .vc-toggle')) return;
+    // Skip if clicking on inline input or status indicator
+    if (e.target.closest('.vc-inline-input, .vc-status-indicator')) return;
+    // Skip if processing
+    if (isProcessing) return;
+
+    // Clear hover highlight when starting drag
+    if (currentHoveredElement) {
+      removeElementHighlight();
+    }
 
     isDragging = true;
     dragStart = { x: e.clientX, y: e.clientY };
     dragEnd = { x: e.clientX, y: e.clientY };
-
-    selectionRect.classList.add('vc-show');
-    updateSelectionRect();
+    dragStartTime = Date.now();
   }
 
   // Mouse move handler - update drag
   function handleMouseMove(e) {
-    if (!isSelectionMode) return;
-
     if (isDragging) {
       dragEnd = { x: e.clientX, y: e.clientY };
-      updateSelectionRect();
-      updateSelectionInfo();
+
+      // Only show selection rect if moved more than 10px
+      const distance = Math.sqrt(
+        Math.pow(dragEnd.x - dragStart.x, 2) +
+        Math.pow(dragEnd.y - dragStart.y, 2)
+      );
+
+      if (distance > 10) {
+        selectionRect.classList.add('vc-show');
+        updateSelectionRect();
+        updateSelectionInfo();
+      }
     }
   }
 
   // Mouse up handler - complete drag
   function handleMouseUp(e) {
-    if (!isSelectionMode || !isDragging) return;
+    if (!isDragging) return;
+
+    const dragDuration = Date.now() - dragStartTime;
+    const distance = Math.sqrt(
+      Math.pow(dragEnd.x - dragStart.x, 2) +
+      Math.pow(dragEnd.y - dragStart.y, 2)
+    );
 
     isDragging = false;
     selectionRect.classList.remove('vc-show');
     selectionInfo.classList.remove('vc-show');
+
+    // If it's a click (small movement and short duration), allow normal behavior
+    if (distance < 10 && dragDuration < 300) {
+      console.log('[Visual Claude] Click detected, allowing normal interaction');
+      return;
+    }
 
     // Calculate bounds
     const bounds = {
@@ -684,8 +601,8 @@
       return;
     }
 
-    // Show popup
-    showPopup(bounds, elements);
+    // Show inline input near cursor
+    showInlineInput(e.clientX, e.clientY, bounds, elements);
   }
 
   // Update selection rectangle
@@ -712,34 +629,140 @@
     selectionInfo.classList.add('vc-show');
   }
 
-  // Event listeners
-  toggle.addEventListener('click', toggleSelectionMode);
-  document.addEventListener('mousedown', handleMouseDown);
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', handleMouseUp);
+  // Hover highlighting functions
+  function findElementUnderCursor(target) {
+    let element = target;
+    let depth = 0;
+    const maxDepth = 3;
 
-  popup.querySelector('[data-action="cancel"]').addEventListener('click', (e) => {
-    e.stopPropagation();
-    hidePopup();
+    while (element && depth < maxDepth) {
+      // Skip if it's a Visual Claude UI element
+      if (element.classList &&
+          (element.classList.contains('vc-selection-rect') ||
+           element.classList.contains('vc-selection-info') ||
+           element.classList.contains('vc-inline-input') ||
+           element.classList.contains('vc-status-indicator'))) {
+        return null;
+      }
+
+      // Check if element is valid and visible
+      if (element.nodeType === Node.ELEMENT_NODE && element.offsetParent !== null) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 5 && rect.height > 5) {
+          return element;
+        }
+      }
+
+      element = element.parentElement;
+      depth++;
+    }
+
+    return null;
+  }
+
+  function applyElementHighlight(element) {
+    if (!element) return;
+
+    element.classList.add('vc-element-highlight');
+    currentHoveredElement = element;
+
+    // Show element info in tooltip
+    const tagName = element.tagName.toLowerCase();
+    const id = element.id ? `#${element.id}` : '';
+    const classes = Array.from(element.classList)
+      .filter(c => !c.startsWith('vc-'))
+      .slice(0, 2)
+      .join('.');
+    const classStr = classes ? `.${classes}` : '';
+
+    const label = `${tagName}${id}${classStr}`;
+
+    // Position tooltip near element
+    const rect = element.getBoundingClientRect();
+    selectionInfo.textContent = label;
+    selectionInfo.style.left = (rect.left + 10) + 'px';
+    selectionInfo.style.top = (rect.top - 30) + 'px';
+    selectionInfo.classList.add('vc-show');
+  }
+
+  function removeElementHighlight() {
+    if (currentHoveredElement) {
+      currentHoveredElement.classList.remove('vc-element-highlight');
+      currentHoveredElement = null;
+    }
+    selectionInfo.classList.remove('vc-show');
+  }
+
+  function handleHover(e) {
+    // Skip if dragging
+    if (isDragging) {
+      if (currentHoveredElement) {
+        removeElementHighlight();
+      }
+      return;
+    }
+
+    // Skip if processing or inline input is open
+    if (isProcessing || inlineInput.classList.contains('vc-show')) {
+      if (currentHoveredElement) {
+        removeElementHighlight();
+      }
+      return;
+    }
+
+    // Find element under cursor
+    const element = findElementUnderCursor(e.target);
+
+    // Update highlight if element changed
+    if (element !== currentHoveredElement) {
+      removeElementHighlight();
+      if (element) {
+        applyElementHighlight(element);
+      }
+    }
+  }
+
+  function handleHoverThrottled(e) {
+    const now = Date.now();
+    if (now - lastHoverCheckTime < HOVER_CHECK_THROTTLE) return;
+    lastHoverCheckTime = now;
+    handleHover(e);
+  }
+
+  // Event listeners
+  document.addEventListener('mousedown', handleMouseDown);
+  document.addEventListener('mousemove', (e) => {
+    handleMouseMove(e);
+    handleHoverThrottled(e);
+  });
+  document.addEventListener('mouseup', handleMouseUp);
+  document.addEventListener('mouseleave', () => {
+    if (currentHoveredElement) {
+      removeElementHighlight();
+    }
   });
 
-  popup.querySelector('[data-action="send"]').addEventListener('click', (e) => {
+  // Inline input event listeners
+  inlineInput.querySelector('[data-action="cancel"]').addEventListener('click', (e) => {
     e.stopPropagation();
-    const instruction = popup.querySelector('.vc-popup-textarea').value;
+    hideInlineInput();
+  });
+
+  inlineInput.querySelector('[data-action="send"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const instruction = inlineInput.querySelector('.vc-inline-text').value;
     sendMessage(instruction);
   });
 
-  backdrop.addEventListener('click', (e) => {
-    e.stopPropagation();
-    hidePopup();
-  });
-
   // Handle Enter key in textarea (Shift+Enter for new line)
-  popup.querySelector('.vc-popup-textarea').addEventListener('keydown', (e) => {
+  inlineInput.querySelector('.vc-inline-text').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       const instruction = e.target.value;
       sendMessage(instruction);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      hideInlineInput();
     }
   });
 
@@ -783,7 +806,7 @@
           // Message was received by server (already showing "Processing...")
         } else if (data.status === 'complete') {
           // Claude finished processing
-          setButtonStatus('done');
+          setStatus('complete');
         }
       } catch (err) {
         console.error('[Visual Claude] Failed to parse server message:', err);
@@ -801,6 +824,6 @@
 
   // Initialize
   connectWebSockets();
-  console.log('[Visual Claude] Initialized with drag-to-select ✓');
-  console.log('[Visual Claude] Click the eye icon and drag to select an area');
+  console.log('[Visual Claude] Initialized with always-on drag-to-select ✓');
+  console.log('[Visual Claude] Drag anywhere to select elements. Regular clicks work normally.');
 })();
