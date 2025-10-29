@@ -58,6 +58,7 @@ func main() {
 
 	// Create bridge
 	bridgeInstance := bridge.NewBridge(ptyManager, cfg.Verbose, statusDisplay)
+	bridgeInstance.SetProgram(tuiProgram)
 
 	// Start file watcher
 	watcherInstance, err := watcher.NewWatcher(cfg.ProjectDir, cfg.Verbose, statusDisplay)

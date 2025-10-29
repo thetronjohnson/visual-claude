@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/thetronjohnson/visual-claude/internal/pty"
 	"github.com/thetronjohnson/visual-claude/internal/status"
+	"github.com/thetronjohnson/visual-claude/internal/tui"
 )
 
 // ElementInfo represents information about a selected HTML element
@@ -40,6 +42,7 @@ type Bridge struct {
 	ptyManager *pty.Manager
 	verbose    bool
 	display    *status.Display
+	program    *tea.Program
 }
 
 // NewBridge creates a new bridge
@@ -51,10 +54,25 @@ func NewBridge(ptyManager *pty.Manager, verbose bool, display *status.Display) *
 	}
 }
 
+// SetProgram sets the TUI program for sending messages
+func (b *Bridge) SetProgram(p *tea.Program) {
+	b.program = p
+}
+
 // HandleMessage processes a message from the browser and sends it to Claude Code
 func (b *Bridge) HandleMessage(msg Message) error {
 	// Format the message for Claude Code
 	formattedMsg := b.formatMessage(msg)
+
+	// Notify TUI that an instruction was received
+	if b.program != nil {
+		areaInfo := fmt.Sprintf("%dx%d px · %d elements",
+			msg.Area.Width, msg.Area.Height, msg.Area.ElementCount)
+		b.program.Send(tui.InstructionMsg{
+			Instruction: msg.Instruction,
+			AreaInfo:    areaInfo,
+		})
+	}
 
 	// Send to Claude Code
 	if err := b.ptyManager.SendMessage(formattedMsg); err != nil {
