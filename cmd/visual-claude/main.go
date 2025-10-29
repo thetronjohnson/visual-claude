@@ -11,9 +11,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/thetronjohnson/visual-claude/internal/bridge"
+	"github.com/thetronjohnson/visual-claude/internal/claude"
 	"github.com/thetronjohnson/visual-claude/internal/config"
 	"github.com/thetronjohnson/visual-claude/internal/proxy"
-	"github.com/thetronjohnson/visual-claude/internal/pty"
 	"github.com/thetronjohnson/visual-claude/internal/status"
 	"github.com/thetronjohnson/visual-claude/internal/tui"
 	"github.com/thetronjohnson/visual-claude/internal/watcher"
@@ -46,18 +46,17 @@ func main() {
 	tuiProgram := tea.NewProgram(tuiModel)
 
 	// Start Claude Code manager
-	ptyManager, err := pty.NewManager(cfg.ProjectDir, cfg.ClaudeCodePath, cfg.Verbose, statusDisplay)
+	claudeManager, err := claude.NewManager(cfg.ProjectDir, cfg.ClaudeCodePath, cfg.Verbose)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error starting Claude Code: %v\n", err)
 		os.Exit(1)
 	}
-	defer ptyManager.Close()
 
 	// Connect manager to TUI
-	ptyManager.SetProgram(tuiProgram)
+	claudeManager.SetProgram(tuiProgram)
 
 	// Create bridge
-	bridgeInstance := bridge.NewBridge(ptyManager, cfg.Verbose, statusDisplay)
+	bridgeInstance := bridge.NewBridge(claudeManager, cfg.Verbose, statusDisplay)
 	bridgeInstance.SetProgram(tuiProgram)
 
 	// Start file watcher
@@ -86,7 +85,6 @@ func main() {
 
 		// Close other resources
 		watcherInstance.Close()
-		ptyManager.Close()
 
 		os.Exit(0)
 	}()

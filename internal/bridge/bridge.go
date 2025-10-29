@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/thetronjohnson/visual-claude/internal/pty"
+	"github.com/thetronjohnson/visual-claude/internal/claude"
 	"github.com/thetronjohnson/visual-claude/internal/status"
 	"github.com/thetronjohnson/visual-claude/internal/tui"
 )
@@ -39,18 +39,18 @@ type Message struct {
 
 // Bridge coordinates messages between the browser and Claude Code
 type Bridge struct {
-	ptyManager *pty.Manager
-	verbose    bool
-	display    *status.Display
-	program    *tea.Program
+	claudeManager *claude.Manager
+	verbose       bool
+	display       *status.Display
+	program       *tea.Program
 }
 
 // NewBridge creates a new bridge
-func NewBridge(ptyManager *pty.Manager, verbose bool, display *status.Display) *Bridge {
+func NewBridge(claudeManager *claude.Manager, verbose bool, display *status.Display) *Bridge {
 	return &Bridge{
-		ptyManager: ptyManager,
-		verbose:    verbose,
-		display:    display,
+		claudeManager: claudeManager,
+		verbose:       verbose,
+		display:       display,
 	}
 }
 
@@ -75,7 +75,7 @@ func (b *Bridge) HandleMessage(msg Message) error {
 	}
 
 	// Send to Claude Code
-	if err := b.ptyManager.SendMessage(formattedMsg); err != nil {
+	if err := b.claudeManager.SendMessage(formattedMsg); err != nil {
 		return fmt.Errorf("failed to send message to Claude Code: %w", err)
 	}
 
@@ -84,9 +84,8 @@ func (b *Bridge) HandleMessage(msg Message) error {
 
 // formatMessage formats a browser message for Claude Code
 func (b *Bridge) formatMessage(msg Message) string {
-	// Create a single-line message (no embedded newlines)
-	// This allows submission with a single Enter press
-	// Multiline messages would require Shift+Enter which can't be simulated via PTY
+	// Format message for Claude Code CLI
+	// Single-line format keeps the message compact and readable
 
 	var parts []string
 
