@@ -94,33 +94,47 @@ func (b *Bridge) formatMessage(msg Message) string {
 	parts = append(parts, msg.Instruction)
 
 	// Add area context inline
-	parts = append(parts, fmt.Sprintf("(Selected area: %dx%d pixels with %d elements:",
-		msg.Area.Width, msg.Area.Height, msg.Area.ElementCount))
+	parts = append(parts, fmt.Sprintf("(Selected %d elements in %dx%d area:",
+		msg.Area.ElementCount, msg.Area.Width, msg.Area.Height))
 
-	// Add first few elements inline
-	elementLimit := 3
-	if len(msg.Area.Elements) < elementLimit {
-		elementLimit = len(msg.Area.Elements)
-	}
+	// Include ALL elements with full details (not just first 3)
+	for i, el := range msg.Area.Elements {
+		// Build element descriptor with full information
+		var elementDesc strings.Builder
+		elementDesc.WriteString("[")
 
-	for i := 0; i < elementLimit; i++ {
-		el := msg.Area.Elements[i]
-		elementDesc := fmt.Sprintf("<%s>", el.TagName)
-		if el.ID != "" {
-			elementDesc += fmt.Sprintf("#%s", el.ID)
-		}
-		if el.Classes != "" {
-			// Just show first class
-			classes := strings.Split(el.Classes, " ")
-			if len(classes) > 0 {
-				elementDesc += fmt.Sprintf(".%s", classes[0])
+		// Selector (e.g., "div#card-1.card.featured")
+		elementDesc.WriteString(el.Selector)
+
+		// Inner text (first 50 chars to keep message manageable)
+		if el.InnerText != "" {
+			innerText := strings.ReplaceAll(el.InnerText, "\n", " ")
+			innerText = strings.TrimSpace(innerText)
+			if len(innerText) > 50 {
+				innerText = innerText[:50] + "..."
 			}
+			elementDesc.WriteString(fmt.Sprintf(" text:\"%s\"", innerText))
 		}
-		parts = append(parts, elementDesc)
-	}
 
-	if len(msg.Area.Elements) > elementLimit {
-		parts = append(parts, fmt.Sprintf("+%d more", len(msg.Area.Elements)-elementLimit))
+		// Compact HTML (first 100 chars)
+		if el.OuterHTML != "" {
+			html := strings.ReplaceAll(el.OuterHTML, "\n", " ")
+			html = strings.TrimSpace(html)
+			if len(html) > 100 {
+				html = html[:100] + "..."
+			}
+			elementDesc.WriteString(fmt.Sprintf(" html:%s", html))
+		}
+
+		elementDesc.WriteString("]")
+
+		parts = append(parts, elementDesc.String())
+
+		// Limit total elements to 20 to keep message size reasonable
+		if i >= 19 && len(msg.Area.Elements) > 20 {
+			parts = append(parts, fmt.Sprintf("[+%d more elements]", len(msg.Area.Elements)-20))
+			break
+		}
 	}
 
 	parts = append(parts, ")")

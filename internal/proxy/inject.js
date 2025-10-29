@@ -306,11 +306,11 @@
 
       const rect = el.getBoundingClientRect();
 
-      // Check if element is fully inside selection
-      if (rect.left >= bounds.left &&
-          rect.right <= bounds.right &&
-          rect.top >= bounds.top &&
-          rect.bottom <= bounds.bottom) {
+      // Check if element intersects with selection (more forgiving than full containment)
+      if (rect.left < bounds.right &&
+          rect.right > bounds.left &&
+          rect.top < bounds.bottom &&
+          rect.bottom > bounds.top) {
         elements.push(el);
       }
     });
@@ -320,11 +320,20 @@
 
   // Get element info
   function getElementInfo(element) {
+    // Handle both string className (HTML) and SVGAnimatedString (SVG)
+    let classes = '';
+    if (element.className) {
+      classes = typeof element.className === 'string'
+        ? element.className
+        : element.className.baseVal || '';
+    }
+
     return {
       tagName: element.tagName,
       id: element.id || '',
-      classes: element.className || '',
+      classes: classes,
       selector: getSelector(element),
+      innerText: element.innerText || '',
       outerHTML: element.outerHTML || '',
     };
   }
@@ -340,7 +349,11 @@
       let selector = element.nodeName.toLowerCase();
 
       if (element.className) {
-        const classes = element.className.trim().split(/\s+/).filter(c => !c.startsWith('vc-'));
+        // Handle both string className (HTML) and SVGAnimatedString (SVG)
+        const classNameStr = typeof element.className === 'string'
+          ? element.className
+          : element.className.baseVal || '';
+        const classes = classNameStr.trim().split(/\s+/).filter(c => !c.startsWith('vc-'));
         if (classes.length > 0) {
           selector += '.' + classes[0];
         }
@@ -526,6 +539,13 @@
     // Skip if processing
     if (isProcessing) return;
 
+    // Check WebSocket connection state
+    if (!messageWs || messageWs.readyState !== WebSocket.OPEN) {
+      console.warn('[Visual Claude] WebSocket not ready - state:',
+        messageWs ? messageWs.readyState : 'null',
+        '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
+    }
+
     // Clear hover highlight when starting drag
     if (currentHoveredElement) {
       removeElementHighlight();
@@ -571,7 +591,7 @@
     selectionInfo.classList.remove('vc-show');
 
     // If it's a click (small movement and short duration), allow normal behavior
-    if (distance < 10 && dragDuration < 300) {
+    if (distance < 5 && dragDuration < 200) {
       console.log('[Visual Claude] Click detected, allowing normal interaction');
       return;
     }
@@ -588,7 +608,11 @@
 
     // Minimum selection size (10x10px)
     if (bounds.width < 10 || bounds.height < 10) {
-      console.log('[Visual Claude] Selection too small, ignoring');
+      console.log('[Visual Claude] Selection rejected - too small:', {
+        width: bounds.width,
+        height: bounds.height,
+        minRequired: '10x10px'
+      });
       return;
     }
 
@@ -596,9 +620,17 @@
     const elements = getElementsInBounds(bounds);
 
     if (elements.length === 0) {
-      console.log('[Visual Claude] No elements in selection');
+      console.log('[Visual Claude] Selection rejected - no elements found:', {
+        bounds: bounds,
+        totalElements: document.querySelectorAll('body *').length
+      });
       return;
     }
+
+    console.log('[Visual Claude] Selection successful:', {
+      elements: elements.length,
+      bounds: `${bounds.width}x${bounds.height}px`
+    });
 
     // Show inline input near cursor
     showInlineInput(e.clientX, e.clientY, bounds, elements);
