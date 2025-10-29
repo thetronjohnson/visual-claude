@@ -7,18 +7,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Color palette - Modern vibrant theme
+// Color palette - Matching GUI design language
 var (
-	primaryColor    = lipgloss.Color("#8b5cf6") // Purple
-	secondaryColor  = lipgloss.Color("#06b6d4") // Cyan
-	successColor    = lipgloss.Color("#10b981") // Emerald green
-	errorColor      = lipgloss.Color("#f43f5e") // Rose red
-	warningColor    = lipgloss.Color("#f59e0b") // Amber
-	accentColor     = lipgloss.Color("#ec4899") // Pink
-	mutedColor      = lipgloss.Color("#94a3b8") // Slate gray
-	dimColor        = lipgloss.Color("#64748b") // Dim slate
-	brightColor     = lipgloss.Color("#f1f5f9") // Almost white
-	backgroundColor = lipgloss.Color("#0f172a") // Dark navy
+	primaryColor    = lipgloss.Color("#F19E38") // Orange (matching GUI edit mode)
+	secondaryColor  = lipgloss.Color("#333333") // Dark gray (matching GUI borders)
+	successColor    = lipgloss.Color("#22c55e") // Green (matching GUI complete state)
+	errorColor      = lipgloss.Color("#ef4444") // Red
+	warningColor    = lipgloss.Color("#F19E38") // Orange (same as primary)
+	accentColor     = lipgloss.Color("#F19E38") // Orange accent
+	mutedColor      = lipgloss.Color("#6b7280") // Gray
+	dimColor        = lipgloss.Color("#9ca3af") // Light gray
+	brightColor     = lipgloss.Color("#ffffff") // White
+	backgroundColor = lipgloss.Color("#1f2937") // Dark background
 )
 
 // Styles
@@ -26,13 +26,13 @@ var (
 	titleStyle = lipgloss.NewStyle().
 			Foreground(primaryColor).
 			Bold(true).
-			Background(lipgloss.Color("#1e293b")).
+			Background(secondaryColor).
 			Padding(0, 2).
 			MarginBottom(1)
 
 	headerStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(primaryColor).
+			BorderForeground(secondaryColor).
 			Padding(0, 1).
 			MarginBottom(1)
 
@@ -48,7 +48,7 @@ var (
 			Foreground(mutedColor)
 
 	toolUseStyle = lipgloss.NewStyle().
-			Foreground(secondaryColor).
+			Foreground(primaryColor).
 			Bold(true)
 
 	toolResultStyle = lipgloss.NewStyle().
@@ -106,7 +106,7 @@ func (m Model) View() string {
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝`
 
-	// Apply gradient-like colors to the ASCII art
+	// Apply orange color to the ASCII art (matching GUI)
 	artStyle := lipgloss.NewStyle().
 		Foreground(primaryColor).
 		Bold(true)
@@ -133,11 +133,11 @@ func (m Model) View() string {
 				// Visual separator between instructions with decorative elements
 				b.WriteString("\n")
 				separator := lipgloss.NewStyle().
-					Foreground(primaryColor).
+					Foreground(secondaryColor).
 					Render("◆ ") +
 					dividerStyle.Render(strings.Repeat("─", 54)) +
 					lipgloss.NewStyle().
-					Foreground(primaryColor).
+					Foreground(secondaryColor).
 					Render(" ◆")
 				b.WriteString(separator)
 				b.WriteString("\n\n")
