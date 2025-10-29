@@ -10,6 +10,8 @@
   let reloadWs = null;
   let messageWs = null;
   let isProcessing = false;
+  let messageIdCounter = 0;
+  let currentMessageId = null;
 
   // Hover state
   let currentHoveredElement = null;
@@ -475,7 +477,13 @@
     const screenshot = await captureAreaScreenshot(bounds);
     const elementsInfo = selectedElements.map(el => getElementInfo(el));
 
+    // Generate unique message ID for tracking
+    const messageId = ++messageIdCounter;
+    currentMessageId = messageId;
+    console.log('[Visual Claude] 🆔 Generated new message ID:', messageId);
+
     const message = {
+      id: messageId,
       area: {
         x: bounds.left,
         y: bounds.top,
@@ -497,12 +505,12 @@
 
     if (messageWs && messageWs.readyState === WebSocket.OPEN) {
       console.log('[Visual Claude] WebSocket state: OPEN, sending...');
+
+      // Show processing status immediately (clear any previous status)
+      setStatus('processing');
+
       messageWs.send(JSON.stringify(message));
       console.log('[Visual Claude] ✓ Message sent to server');
-
-      // Show processing status
-      isProcessing = true;
-      statusIndicator.classList.add('vc-show', 'vc-processing');
     } else {
       console.error('[Visual Claude] ✗ WebSocket not connected, state:', messageWs ? messageWs.readyState : 'null');
     }
@@ -830,14 +838,38 @@
     messageWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('[Visual Claude] Message from server:', data);
+        console.log('[Visual Claude] Message from server:', data, 'currentMessageId:', currentMessageId);
+
+        // Check if this message is for the current request
+        if (data.id && data.id !== currentMessageId) {
+          console.warn('[Visual Claude] ⚠️  Ignoring stale message - received ID:', data.id, 'current:', currentMessageId, 'status:', data.status);
+          return;
+        }
+
+        // Safety check: if we don't have a current message ID but receive a completion, ignore it
+        if (!currentMessageId && (data.status === 'complete' || data.status === 'error')) {
+          console.warn('[Visual Claude] ⚠️  Ignoring completion message with no active request');
+          return;
+        }
 
         // Listen for completion status
         if (data.status === 'received') {
           // Message was received by server (already showing "Processing...")
+          console.log('[Visual Claude] ✅ Server acknowledged receipt of message ID:', data.id);
         } else if (data.status === 'complete') {
           // Claude finished processing
+          console.log('[Visual Claude] 🎉 Task completed successfully for message ID:', data.id);
+          console.log('[Visual Claude] 🎯 About to call setStatus("complete")');
           setStatus('complete');
+          console.log('[Visual Claude] 🧹 Clearing currentMessageId (was:', currentMessageId, ')');
+          currentMessageId = null; // Clear current message ID
+        } else if (data.status === 'error') {
+          // Error occurred
+          console.log('[Visual Claude] ❌ Error occurred for message ID:', data.id, 'Error:', data.error);
+          setStatus('error');
+          currentMessageId = null; // Clear current message ID
+        } else {
+          console.warn('[Visual Claude] ⚠️  Unknown status received:', data.status);
         }
       } catch (err) {
         console.error('[Visual Claude] Failed to parse server message:', err);

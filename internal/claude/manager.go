@@ -9,14 +9,8 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/thetronjohnson/visual-claude/internal/tui"
 )
-
-// StreamEvent represents an event to send to the TUI
-type StreamEvent struct {
-	Type    string
-	Content string
-	Data    map[string]interface{}
-}
 
 // Manager manages Claude Code execution using --print mode
 type Manager struct {
@@ -79,13 +73,25 @@ func (m *Manager) SendMessage(message string) error {
 	}
 
 	// Wait for command to complete
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("Claude Code execution failed: %w", err)
+	waitErr := cmd.Wait()
+
+	// Always notify TUI that processing is done (success or error)
+	if m.program != nil {
+		if waitErr != nil {
+			// Send error event if command failed
+			m.program.Send(tui.StreamEvent{
+				Type:    "error",
+				Content: fmt.Sprintf("Exit code: %v", waitErr),
+			})
+		} else {
+			// Send completion event if command succeeded
+			m.program.Send(tui.StreamEvent{Type: "complete"})
+		}
 	}
 
-	// Send completion event to TUI
-	if m.program != nil {
-		m.program.Send(StreamEvent{Type: "complete"})
+	// Return error if there was one
+	if waitErr != nil {
+		return fmt.Errorf("Claude Code execution failed: %w", waitErr)
 	}
 
 	return nil
@@ -111,7 +117,7 @@ func (m *Manager) handleStreamLine(line string) error {
 	}
 
 	// Build stream event
-	streamEvent := StreamEvent{
+	streamEvent := tui.StreamEvent{
 		Type: eventType,
 		Data: event,
 	}
@@ -125,6 +131,11 @@ func (m *Manager) handleStreamLine(line string) error {
 	case "tool_use":
 		if toolName, ok := event["name"].(string); ok {
 			streamEvent.Content = toolName
+		}
+	case "tool_result":
+		// Extract result content if available
+		if result, ok := event["content"].(string); ok {
+			streamEvent.Content = result
 		}
 	case "error":
 		if errMsg, ok := event["error"].(string); ok {

@@ -41,9 +41,9 @@ func main() {
 		cfg.TargetPort = detectedPort
 	}
 
-	// Initialize Bubble Tea TUI
+	// Initialize Bubble Tea TUI with alt screen mode
 	tuiModel := tui.NewModel()
-	tuiProgram := tea.NewProgram(tuiModel)
+	tuiProgram := tea.NewProgram(tuiModel, tea.WithAltScreen())
 
 	// Start Claude Code manager
 	claudeManager, err := claude.NewManager(cfg.ProjectDir, cfg.ClaudeCodePath, cfg.Verbose)

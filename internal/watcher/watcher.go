@@ -132,13 +132,7 @@ func (w *Watcher) notifyClients() {
 	w.clientsMu.RLock()
 	defer w.clientsMu.RUnlock()
 
-	// Stop spinner and show completion
-	if w.display != nil {
-		w.display.StopSpinner()
-		// TODO: Track files that changed
-		w.display.PrintCompleted([]string{})
-		w.display.PrintBrowserReload(len(w.clients))
-	}
+	// Display is handled by TUI now - no direct printing needed
 
 	if w.verbose {
 		fmt.Printf("[Watcher] Notifying %d clients to reload\n", len(w.clients))

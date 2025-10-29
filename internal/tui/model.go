@@ -28,14 +28,15 @@ type Event struct {
 
 // Model is the Bubble Tea model for the TUI
 type Model struct {
-	instruction string
-	areaInfo    string
-	events      []Event
-	status      string // "waiting", "processing", "complete", "error"
-	startTime   time.Time
-	duration    time.Duration
-	width       int
-	height      int
+	instruction   string
+	areaInfo      string
+	events        []Event
+	status        string // "waiting", "processing", "complete", "error"
+	startTime     time.Time
+	duration      time.Duration
+	width         int
+	height        int
+	completionAck chan<- struct{} // Channel to signal completion to Bridge
 }
 
 // NewModel creates a new TUI model
@@ -68,14 +69,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case InstructionMsg:
+		// Add separator if there are existing events (for history)
+		if len(m.events) > 0 {
+			m.events = append(m.events, Event{
+				Type:    "separator",
+				Content: "---",
+			})
+		}
+
 		m.instruction = msg.Instruction
 		m.areaInfo = msg.AreaInfo
 		m.status = "processing"
 		m.startTime = time.Now()
-		m.events = []Event{{
+		m.completionAck = msg.CompletionAck // Store completion channel
+
+		// Append new instruction instead of replacing
+		m.events = append(m.events, Event{
 			Type:    EventInstruction,
 			Content: msg.Instruction,
-		}}
+		})
 		return m, nil
 
 	case StreamEventMsg:
@@ -111,6 +123,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Content: msg.Content,
 			Data:    msg.Data,
 		})
+
+		// Update status if this is a completion or error event
+		if eventType == EventComplete {
+			m.status = "complete"
+			m.duration = time.Since(m.startTime)
+			// Signal completion to Bridge
+			if m.completionAck != nil {
+				close(m.completionAck)
+				m.completionAck = nil
+			}
+		} else if eventType == EventError {
+			m.status = "error"
+			m.duration = time.Since(m.startTime)
+			// Signal completion to Bridge
+			if m.completionAck != nil {
+				close(m.completionAck)
+				m.completionAck = nil
+			}
+		}
+
 		return m, nil
 	}
 
@@ -128,8 +160,9 @@ type StreamEvent struct {
 
 // InstructionMsg is sent when a new instruction is received from the browser
 type InstructionMsg struct {
-	Instruction string
-	AreaInfo    string
+	Instruction   string
+	AreaInfo      string
+	CompletionAck chan<- struct{} // Channel to signal when processing is complete
 }
 
 // StreamEventMsg is sent for each streaming event from Claude Code

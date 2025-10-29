@@ -2,7 +2,9 @@ package bridge
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/thetronjohnson/visual-claude/internal/claude"
@@ -32,6 +34,7 @@ type AreaInfo struct {
 
 // Message represents a message from the browser to Claude Code
 type Message struct {
+	ID          int      `json:"id"`
 	Area        AreaInfo `json:"area"`
 	Instruction string   `json:"instruction"`
 	Screenshot  string   `json:"screenshot"` // Base64 encoded image
@@ -64,19 +67,36 @@ func (b *Bridge) HandleMessage(msg Message) error {
 	// Format the message for Claude Code
 	formattedMsg := b.formatMessage(msg)
 
+	// Create completion channel for synchronization
+	completionCh := make(chan struct{})
+
 	// Notify TUI that an instruction was received
 	if b.program != nil {
 		areaInfo := fmt.Sprintf("%dx%d px · %d elements",
 			msg.Area.Width, msg.Area.Height, msg.Area.ElementCount)
 		b.program.Send(tui.InstructionMsg{
-			Instruction: msg.Instruction,
-			AreaInfo:    areaInfo,
+			Instruction:   msg.Instruction,
+			AreaInfo:      areaInfo,
+			CompletionAck: completionCh,
 		})
 	}
 
-	// Send to Claude Code
+	// Send to Claude Code (this blocks until Claude finishes)
 	if err := b.claudeManager.SendMessage(formattedMsg); err != nil {
 		return fmt.Errorf("failed to send message to Claude Code: %w", err)
+	}
+
+	// Wait for TUI to finish processing the completion event (with timeout)
+	if b.program != nil {
+		select {
+		case <-completionCh:
+			// TUI has processed the completion event
+		case <-time.After(5 * time.Second):
+			// Timeout - continue anyway to prevent hanging
+			if b.verbose {
+				fmt.Fprintf(os.Stderr, "[Bridge] Timeout waiting for TUI completion acknowledgment\n")
+			}
+		}
 	}
 
 	return nil

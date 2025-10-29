@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -69,6 +71,17 @@ func (s *Server) Start() error {
 	// Modify responses to inject our script
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		return InjectScript(resp, "/__visual-claude/inject.js")
+	}
+
+	// Suppress "context canceled" errors that occur during normal operation
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		// Silently handle context canceled errors (normal when client disconnects)
+		if err != nil && !strings.Contains(err.Error(), "context canceled") {
+			if s.verbose {
+				fmt.Fprintf(os.Stderr, "[Proxy] Error: %v\n", err)
+			}
+			http.Error(w, "Bad Gateway", http.StatusBadGateway)
+		}
 	}
 
 	// Set up HTTP handlers
@@ -179,17 +192,39 @@ func (s *Server) handleMessageWebSocket(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// Send acknowledgment that message was received
-		conn.WriteJSON(map[string]string{"status": "received"})
+		fmt.Printf("[Proxy] 📨 Sending 'received' ack for message ID %d\n", msg.ID)
+		conn.WriteJSON(map[string]interface{}{
+			"id":     msg.ID,
+			"status": "received",
+		})
 
 		// Handle the message (TUI will show all feedback)
 		// This blocks until Claude Code finishes
+		fmt.Printf("[Proxy] ⏳ Processing message ID %d...\n", msg.ID)
 		err = s.bridge.HandleMessage(msg)
 
-		// Send completion status
+		// Send completion status with write deadline
 		if err != nil {
-			conn.WriteJSON(map[string]string{"status": "error", "error": err.Error()})
+			fmt.Printf("[Proxy] ❌ Sending 'error' status for message ID %d: %v\n", msg.ID, err)
+			conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+			if writeErr := conn.WriteJSON(map[string]interface{}{
+				"id":     msg.ID,
+				"status": "error",
+				"error":  err.Error(),
+			}); writeErr != nil {
+				fmt.Fprintf(os.Stderr, "[Proxy] Failed to send error to browser: %v\n", writeErr)
+			}
 		} else {
-			conn.WriteJSON(map[string]string{"status": "complete"})
+			fmt.Printf("[Proxy] 🎉 Sending 'complete' status for message ID %d\n", msg.ID)
+			conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+			if writeErr := conn.WriteJSON(map[string]interface{}{
+				"id":     msg.ID,
+				"status": "complete",
+			}); writeErr != nil {
+				fmt.Fprintf(os.Stderr, "[Proxy] ⚠️  Failed to send completion to browser: %v\n", writeErr)
+			} else {
+				fmt.Printf("[Proxy] ✅ Successfully sent 'complete' for message ID %d\n", msg.ID)
+			}
 		}
 	}
 }
