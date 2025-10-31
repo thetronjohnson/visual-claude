@@ -26,6 +26,7 @@
       clickTimeout: null,
       processingTimeout: null,
       isEditMode: true,
+      pendingAIInstruction: null, // Stores AI instruction while waiting for preview
 
       // WebSockets
       reloadWs: null,
@@ -97,6 +98,13 @@
       },
       showReorderPlaceholder: false,
       reorderPlaceholderStyle: '',
+
+      // Drop Validation State
+      currentDropTarget: null,
+      showDropWarning: false,
+      dropWarningText: '',
+      dropWarningStyle: '',
+      isValidDrop: true,
 
       // Action Menu State (NEW)
       showActionMenu: false,
@@ -450,12 +458,6 @@
           if (e.key === 'e' || e.key === 'E') {
             e.preventDefault();
             this.actionMenuEdit();
-          } else if (e.key === 'm' || e.key === 'M') {
-            e.preventDefault();
-            this.actionMenuMove();
-          } else if (e.key === 'r' || e.key === 'R') {
-            e.preventDefault();
-            this.actionMenuResize();
           } else if (e.key === 'a' || e.key === 'A') {
             e.preventDefault();
             this.actionMenuAI();
@@ -483,6 +485,14 @@
         }
 
         if (this.isProcessing || this.showInlineInput || this.showTextEditor) {
+          if (this.currentHoveredElement) {
+            this.removeElementHighlight();
+          }
+          return;
+        }
+
+        // Don't show hover indicators when an element is selected
+        if (this.selectedElement) {
           if (this.currentHoveredElement) {
             this.removeElementHighlight();
           }
@@ -600,9 +610,15 @@
         const screenshot = await window.VCUtils.captureAreaScreenshot(bounds);
         const elementsInfo = this.selectedElements.map(el => window.VCUtils.getElementInfo(el));
         const instruction = this.inlineInputText.trim();
+        const targetElement = this.selectedElements[0];
 
-        // Add to history instead of sending immediately
-        const changeData = {
+        // Hide input and show loading state
+        this.hideInlineInput();
+        this.setStatus('processing', 'Getting AI preview...');
+
+        // PHASE 1: Get preview changes from Claude Code
+        const previewMessage = {
+          type: 'ai-preview',
           instruction: instruction,
           screenshot: screenshot,
           bounds: {
@@ -612,18 +628,136 @@
             height: bounds.height,
           },
           elements: elementsInfo,
-          elementCount: elementsInfo.length,
         };
 
-        // Use first element for tracking or create a synthetic selector
-        const targetElement = this.selectedElements[0];
-        const preview = `"${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`;
+        console.log('[Visual Claude] Requesting AI preview...');
+        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
+          this.messageWs.send(JSON.stringify(previewMessage));
+        } else {
+          console.error('[Visual Claude] WebSocket not connected');
+          this.setStatus('idle');
+          return;
+        }
 
-        this.addToHistory('ai', targetElement, changeData, preview);
+        // Store pending AI instruction while waiting for preview
+        this.pendingAIInstruction = {
+          instruction: instruction,
+          screenshot: screenshot,
+          bounds: { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height },
+          elements: elementsInfo,
+          targetElement: targetElement,
+        };
+      },
 
-        console.log('[Visual Claude] AI instruction added to history');
+      handleAIPreviewResult(data) {
+        if (!this.pendingAIInstruction) {
+          console.warn('[Visual Claude] Received preview result but no pending instruction');
+          return;
+        }
 
-        this.hideInlineInput();
+        if (data.status === 'error') {
+          console.error('[Visual Claude] AI preview error:', data.error);
+          this.setStatus('idle');
+          this.pendingAIInstruction = null;
+          return;
+        }
+
+        if (data.status === 'success' && data.changes) {
+          console.log('[Visual Claude] Applying AI preview changes:', data.changes);
+
+          // Apply DOM changes
+          const appliedChanges = this.applyDOMChanges(data.changes);
+
+          // Add to history with DOM changes and original instruction
+          const { instruction, screenshot, bounds, elements, targetElement } = this.pendingAIInstruction;
+          const changeData = {
+            instruction: instruction,
+            screenshot: screenshot,
+            bounds: bounds,
+            elements: elements,
+            elementCount: elements.length,
+            domChanges: appliedChanges, // Store what was actually applied for undo
+          };
+
+          const preview = `"${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`;
+          this.addToHistory('ai', targetElement, changeData, preview);
+
+          console.log('[Visual Claude] AI preview applied and added to history');
+          this.setStatus('idle');
+        }
+
+        this.pendingAIInstruction = null;
+      },
+
+      applyDOMChanges(changes) {
+        const appliedChanges = [];
+
+        for (const change of changes) {
+          try {
+            const element = document.querySelector(change.selector);
+            if (!element) {
+              console.warn('[Visual Claude] Element not found for selector:', change.selector);
+              continue;
+            }
+
+            const applied = {
+              selector: change.selector,
+              action: change.action,
+              element: element,
+            };
+
+            switch (change.action) {
+              case 'addClass':
+                applied.oldValue = element.className;
+                element.classList.add(...change.value.split(' '));
+                applied.newValue = element.className;
+                break;
+
+              case 'removeClass':
+                applied.oldValue = element.className;
+                element.classList.remove(...change.value.split(' '));
+                applied.newValue = element.className;
+                break;
+
+              case 'setText':
+                applied.oldValue = element.innerText;
+                element.innerText = change.value;
+                applied.newValue = change.value;
+                break;
+
+              case 'setHTML':
+                applied.oldValue = element.innerHTML;
+                element.innerHTML = change.value;
+                applied.newValue = change.value;
+                break;
+
+              case 'setStyle':
+                applied.property = change.property;
+                applied.oldValue = element.style[change.property];
+                element.style[change.property] = change.value;
+                applied.newValue = change.value;
+                break;
+
+              case 'setAttribute':
+                applied.attribute = change.attribute;
+                applied.oldValue = element.getAttribute(change.attribute);
+                element.setAttribute(change.attribute, change.value);
+                applied.newValue = change.value;
+                break;
+
+              default:
+                console.warn('[Visual Claude] Unknown change action:', change.action);
+                continue;
+            }
+
+            appliedChanges.push(applied);
+            console.log('[Visual Claude] Applied change:', applied);
+          } catch (err) {
+            console.error('[Visual Claude] Error applying change:', change, err);
+          }
+        }
+
+        return appliedChanges;
       },
 
       // ============================================================================
@@ -982,10 +1116,9 @@
         console.log('[Visual Claude] Action: AI instructions');
         if (!this.actionMenuElement) return;
 
-        this.hideActionMenu();
-
-        // Open inline input for AI instructions
-        const rect = this.actionMenuElement.getBoundingClientRect();
+        // Store element reference before hiding menu (hideActionMenu sets it to null)
+        const element = this.actionMenuElement;
+        const rect = element.getBoundingClientRect();
         const bounds = {
           left: rect.left,
           top: rect.top,
@@ -995,7 +1128,10 @@
           height: rect.height,
         };
 
-        this.openInlineInput(rect.right, rect.top, bounds, [this.actionMenuElement]);
+        this.hideActionMenu();
+
+        // Open inline input for AI instructions
+        this.openInlineInput(rect.right, rect.top, bounds, [element]);
       },
 
       // ============================================================================
@@ -1124,9 +1260,36 @@
             element.innerText = change.data.oldText;
           }
         } else if (change.type === 'ai') {
-          // AI changes can't be reverted in frontend
-          // User would need to undo the Claude Code changes
-          console.log('[Visual Claude] AI instruction changes cannot be reverted in frontend');
+          // Revert AI changes by reverting each DOM change
+          if (change.data.domChanges) {
+            for (const domChange of change.data.domChanges) {
+              const el = document.querySelector(domChange.selector);
+              if (!el) continue;
+
+              switch (domChange.action) {
+                case 'addClass':
+                case 'removeClass':
+                  el.className = domChange.oldValue || '';
+                  break;
+                case 'setText':
+                  el.innerText = domChange.oldValue || '';
+                  break;
+                case 'setHTML':
+                  el.innerHTML = domChange.oldValue || '';
+                  break;
+                case 'setStyle':
+                  el.style[domChange.property] = domChange.oldValue || '';
+                  break;
+                case 'setAttribute':
+                  if (domChange.oldValue) {
+                    el.setAttribute(domChange.attribute, domChange.oldValue);
+                  } else {
+                    el.removeAttribute(domChange.attribute);
+                  }
+                  break;
+              }
+            }
+          }
         }
       },
 
@@ -1154,12 +1317,35 @@
             element.innerText = change.data.newText;
           }
         } else if (change.type === 'ai') {
-          // AI changes can't be re-applied in frontend
-          // Will be sent to Claude Code on next commit
-          console.log('[Visual Claude] AI instruction will be sent on commit');
+          // Re-apply AI changes by re-applying each DOM change
+          if (change.data.domChanges) {
+            for (const domChange of change.data.domChanges) {
+              const el = document.querySelector(domChange.selector);
+              if (!el) continue;
+
+              switch (domChange.action) {
+                case 'addClass':
+                case 'removeClass':
+                  el.className = domChange.newValue || '';
+                  break;
+                case 'setText':
+                  el.innerText = domChange.newValue || '';
+                  break;
+                case 'setHTML':
+                  el.innerHTML = domChange.newValue || '';
+                  break;
+                case 'setStyle':
+                  el.style[domChange.property] = domChange.newValue || '';
+                  break;
+                case 'setAttribute':
+                  el.setAttribute(domChange.attribute, domChange.newValue);
+                  break;
+              }
+            }
+          }
         }
 
-        // Re-add to pendingChanges (skip for AI - no pending frontend changes)
+        // Re-add to pendingChanges (skip for AI - handled above)
         if (change.type !== 'ai') {
           this.pendingChanges.set(change.selector, {
             operation: change.type,
@@ -1494,40 +1680,108 @@
             this.selectedElement.style.zIndex = '999999';
             this.selectedElement.style.opacity = '0.8';
           } else {
-            // FREE-DRAG MODE: Apply transform
+            // FREE-DRAG MODE: Apply transform with validation
             if (this.reorderMode.isActive) {
               // Exit reorder mode
               this.exitReorderMode();
             }
 
-            const newX = deltaX;
-            const newY = deltaY;
+            // Validate drop target
+            const dropTarget = this.findValidDropTarget(e.clientX, e.clientY);
+
+            if (!dropTarget) {
+              // Show invalid drop warning
+              this.showInvalidDropWarning(e.clientX, e.clientY);
+              this.clearDropHighlight();
+              // Still allow visual drag but mark as invalid
+            } else {
+              // Valid drop target
+              this.hideDropWarning();
+              this.highlightDropTarget(dropTarget);
+              this.currentDropTarget = dropTarget.element;
+            }
+
+            // Get boundary constraints
+            const boundaries = window.VCUtils.getElementBoundaries(this.selectedElement);
+            let newX = deltaX;
+            let newY = deltaY;
+
+            if (boundaries) {
+              const elementRect = this.selectedElement.getBoundingClientRect();
+
+              // Constrain to parent boundaries
+              const minTranslateX = boundaries.minX - (elementRect.left + window.scrollX);
+              const maxTranslateX = boundaries.maxX - (elementRect.right + window.scrollX);
+              const minTranslateY = boundaries.minY - (elementRect.top + window.scrollY);
+              const maxTranslateY = boundaries.maxY - (elementRect.bottom + window.scrollY);
+
+              newX = Math.max(minTranslateX, Math.min(newX, maxTranslateX));
+              newY = Math.max(minTranslateY, Math.min(newY, maxTranslateY));
+            }
 
             this.selectedElement.style.transform = `translate(${newX}px, ${newY}px)`;
             this.updateResizeHandlesPosition();
           }
         } else if (this.dragHandle.isResizing) {
-          // Apply size changes for resizing
+          // Apply size changes for resizing with constraints
           const direction = this.dragHandle.resizeDirection;
           let newWidth = this.dragHandle.elementStartWidth;
           let newHeight = this.dragHandle.elementStartHeight;
 
-          if (direction.includes('e')) {
-            newWidth = this.dragHandle.elementStartWidth + deltaX;
-          }
-          if (direction.includes('w')) {
-            newWidth = this.dragHandle.elementStartWidth - deltaX;
-          }
-          if (direction.includes('s')) {
-            newHeight = this.dragHandle.elementStartHeight + deltaY;
-          }
-          if (direction.includes('n')) {
-            newHeight = this.dragHandle.elementStartHeight - deltaY;
+          // Check if we should maintain aspect ratio
+          const isImage = this.selectedElement.tagName === 'IMG';
+          const maintainRatio = isImage || e.shiftKey; // Always for images, or when Shift held
+
+          if (maintainRatio) {
+            const aspectRatio = this.dragHandle.elementStartWidth / this.dragHandle.elementStartHeight;
+
+            // Calculate both dimensions from one axis
+            if (Math.abs(deltaX) > Math.abs(deltaY)) {
+              // Resize based on width change
+              if (direction.includes('e')) {
+                newWidth = this.dragHandle.elementStartWidth + deltaX;
+              }
+              if (direction.includes('w')) {
+                newWidth = this.dragHandle.elementStartWidth - deltaX;
+              }
+              newHeight = newWidth / aspectRatio;
+            } else {
+              // Resize based on height change
+              if (direction.includes('s')) {
+                newHeight = this.dragHandle.elementStartHeight + deltaY;
+              }
+              if (direction.includes('n')) {
+                newHeight = this.dragHandle.elementStartHeight - deltaY;
+              }
+              newWidth = newHeight * aspectRatio;
+            }
+          } else {
+            // Normal resize without aspect ratio
+            if (direction.includes('e')) {
+              newWidth = this.dragHandle.elementStartWidth + deltaX;
+            }
+            if (direction.includes('w')) {
+              newWidth = this.dragHandle.elementStartWidth - deltaX;
+            }
+            if (direction.includes('s')) {
+              newHeight = this.dragHandle.elementStartHeight + deltaY;
+            }
+            if (direction.includes('n')) {
+              newHeight = this.dragHandle.elementStartHeight - deltaY;
+            }
           }
 
-          // Apply minimum constraints
-          newWidth = Math.max(50, newWidth);
-          newHeight = Math.max(50, newHeight);
+          // Get content-aware minimum size
+          const minSizes = window.VCUtils.getMinimumSize(this.selectedElement);
+
+          // Get boundary constraints
+          const boundaries = window.VCUtils.getElementBoundaries(this.selectedElement);
+          const maxWidth = boundaries ? boundaries.maxWidth : Infinity;
+          const maxHeight = boundaries ? boundaries.maxHeight : Infinity;
+
+          // Apply constraints (min from content, max from parent)
+          newWidth = Math.max(minSizes.minWidth, Math.min(newWidth, maxWidth));
+          newHeight = Math.max(minSizes.minHeight, Math.min(newHeight, maxHeight));
 
           this.selectedElement.style.width = `${newWidth}px`;
           this.selectedElement.style.height = `${newHeight}px`;
@@ -1642,6 +1896,95 @@
         console.log('[Visual Claude] Exited reorder mode');
       },
 
+      // ============================================================================
+      // DROP TARGET VALIDATION
+      // ============================================================================
+
+      findValidDropTarget(cursorX, cursorY) {
+        // Hide selected element temporarily to get element under cursor
+        const originalVisibility = this.selectedElement.style.visibility;
+        this.selectedElement.style.visibility = 'hidden';
+
+        const targetElement = document.elementFromPoint(cursorX, cursorY);
+
+        this.selectedElement.style.visibility = originalVisibility;
+
+        if (!targetElement) {
+          return null;
+        }
+
+        // Traverse up to find a valid parent
+        let current = targetElement;
+        let depth = 0;
+        const maxDepth = 10;
+
+        while (current && depth < maxDepth) {
+          // Skip VC UI elements
+          if (current.closest(window.VCConstants.VC_UI_SELECTOR)) {
+            current = current.parentElement;
+            depth++;
+            continue;
+          }
+
+          // Don't allow dropping into itself or its children
+          if (current === this.selectedElement || this.selectedElement.contains(current)) {
+            current = current.parentElement;
+            depth++;
+            continue;
+          }
+
+          // Validate parent-child compatibility
+          const validation = window.VCUtils.canAcceptChild(current, this.selectedElement);
+          if (validation.valid) {
+            return { element: current, reason: '' };
+          } else {
+            // Store reason for display
+            this.dropWarningText = validation.reason;
+          }
+
+          current = current.parentElement;
+          depth++;
+        }
+
+        return null; // No valid parent found
+      },
+
+      showInvalidDropWarning(x, y) {
+        this.showDropWarning = true;
+        this.isValidDrop = false;
+        this.dropWarningStyle = `left: ${x + 15}px; top: ${y + 15}px;`;
+
+        // Add invalid cursor class
+        document.body.classList.add('vc-dragging-invalid');
+      },
+
+      hideDropWarning() {
+        this.showDropWarning = false;
+        this.isValidDrop = true;
+        this.dropWarningText = '';
+        document.body.classList.remove('vc-dragging-invalid');
+      },
+
+      highlightDropTarget(dropTarget) {
+        // Remove previous highlight
+        const previousHighlight = document.querySelector('.vc-valid-drop-zone');
+        if (previousHighlight) {
+          previousHighlight.classList.remove('vc-valid-drop-zone');
+        }
+
+        // Add highlight to valid drop zone
+        if (dropTarget && dropTarget.element) {
+          dropTarget.element.classList.add('vc-valid-drop-zone');
+        }
+      },
+
+      clearDropHighlight() {
+        const highlighted = document.querySelector('.vc-valid-drop-zone');
+        if (highlighted) {
+          highlighted.classList.remove('vc-valid-drop-zone');
+        }
+      },
+
       handleDragEnd(e) {
         if (!this.selectedElement) return;
         if (!this.dragHandle.isDragging && !this.dragHandle.isResizing) return;
@@ -1736,6 +2079,11 @@
         this.reorderMode.insertBefore = true;
         this.reorderMode.originalIndex = -1;
         this.reorderMode.newIndex = -1;
+
+        // Reset drop validation state
+        this.hideDropWarning();
+        this.clearDropHighlight();
+        this.currentDropTarget = null;
 
         // Remove global listeners
         document.removeEventListener('mousemove', this.handleDragMove.bind(this));
@@ -1896,6 +2244,12 @@
               return;
             }
 
+            // Handle AI preview response
+            if (data.type === 'ai-preview-result') {
+              this.handleAIPreviewResult(data);
+              return;
+            }
+
             if (data.id && data.id !== this.currentMessageId) {
               console.warn('[Visual Claude] ⚠️  Ignoring stale message');
               return;
@@ -1992,6 +2346,15 @@
          x-bind:style="selectionInfoStyle"
          x-text="selectionInfoText"
          class="vc-selection-info vc-show">
+    </div>
+  `;
+
+  // Drop Warning Tooltip - Shows when trying to drop in invalid location
+  app.innerHTML += `
+    <div x-show="showDropWarning"
+         x-bind:style="dropWarningStyle"
+         x-text="dropWarningText"
+         class="vc-drop-warning">
     </div>
   `;
 
@@ -2241,20 +2604,6 @@
               class="vc-action-menu-btn">
         <span class="vc-action-menu-icon">✏️</span>
         <span class="vc-action-menu-label">Edit</span>
-      </button>
-
-      <!-- Move Button -->
-      <button @click="actionMenuMove()"
-              class="vc-action-menu-btn">
-        <span class="vc-action-menu-icon">↔️</span>
-        <span class="vc-action-menu-label">Move</span>
-      </button>
-
-      <!-- Resize Button -->
-      <button @click="actionMenuResize()"
-              class="vc-action-menu-btn">
-        <span class="vc-action-menu-icon">⊡</span>
-        <span class="vc-action-menu-label">Resize</span>
       </button>
 
       <!-- AI Instructions Button -->

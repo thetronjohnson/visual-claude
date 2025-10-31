@@ -244,6 +244,46 @@ body[data-vc-mode="edit"] .vc-reordering {
 }
 
 /* ============================================================================
+   DROP VALIDATION & CONSTRAINTS
+   ============================================================================ */
+
+/* Invalid drop cursor */
+body.vc-dragging-invalid,
+body.vc-dragging-invalid * {
+  cursor: not-allowed !important;
+}
+
+/* Valid drop zone highlight */
+.vc-valid-drop-zone {
+  outline: 3px dashed var(--vc-success) !important;
+  outline-offset: 4px !important;
+  background: rgba(34, 197, 94, 0.05) !important;
+  transition: all 0.2s ease !important;
+}
+
+/* Invalid drop warning tooltip */
+.vc-drop-warning {
+  position: fixed;
+  background: var(--vc-danger);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: system-ui, -apple-system, sans-serif;
+  pointer-events: none;
+  z-index: 1000001;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  max-width: 300px;
+  animation: vc-fadeIn 0.2s ease;
+}
+
+.vc-drop-warning::before {
+  content: '⚠️ ';
+  margin-right: 4px;
+}
+
+/* ============================================================================
    ACTION MENU - Contextual menu for selected elements
    ============================================================================ */
 

@@ -418,7 +418,7 @@
       if (!layoutContext || !siblingArrangement) return false;
       if (siblingArrangement.count < 2) return false;
 
-      const threshold = 20; // Minimum drag distance to trigger reorder
+      const threshold = 40; // Minimum drag distance to trigger reorder (increased for less sensitivity)
 
       // For flex column or vertical arrangement
       if ((layoutContext.isFlex && layoutContext.flexDirection === 'column') ||
@@ -488,6 +488,143 @@
       }
 
       return null;
+    },
+
+    /**
+     * HTML semantics rules: parent-child compatibility matrix
+     */
+    HTML_RULES: {
+      'LI': { validParents: ['UL', 'OL', 'MENU'] },
+      'TR': { validParents: ['TABLE', 'THEAD', 'TBODY', 'TFOOT'] },
+      'TD': { validParents: ['TR'] },
+      'TH': { validParents: ['TR'] },
+      'THEAD': { validParents: ['TABLE'] },
+      'TBODY': { validParents: ['TABLE'] },
+      'TFOOT': { validParents: ['TABLE'] },
+      'CAPTION': { validParents: ['TABLE'] },
+      'COLGROUP': { validParents: ['TABLE'] },
+      'COL': { validParents: ['COLGROUP'] },
+      'OPTION': { validParents: ['SELECT', 'OPTGROUP', 'DATALIST'] },
+      'OPTGROUP': { validParents: ['SELECT'] },
+      'LEGEND': { validParents: ['FIELDSET'] },
+      'FIGCAPTION': { validParents: ['FIGURE'] },
+      'DT': { validParents: ['DL'] },
+      'DD': { validParents: ['DL'] },
+      'SOURCE': { validParents: ['AUDIO', 'VIDEO', 'PICTURE'] },
+      'TRACK': { validParents: ['AUDIO', 'VIDEO'] },
+      'SUMMARY': { validParents: ['DETAILS'] },
+    },
+
+    /**
+     * Check if a parent element can accept a child element
+     * @param {Element} parentElement - Potential parent
+     * @param {Element} childElement - Element to be moved
+     * @returns {Object} {valid: boolean, reason: string}
+     */
+    canAcceptChild(parentElement, childElement) {
+      if (!parentElement || !childElement) {
+        return { valid: false, reason: 'Missing parent or child element' };
+      }
+
+      const childTag = childElement.tagName;
+      const parentTag = parentElement.tagName;
+
+      // Check HTML semantics rules
+      if (this.HTML_RULES[childTag]) {
+        const validParents = this.HTML_RULES[childTag].validParents;
+        if (!validParents.includes(parentTag)) {
+          return {
+            valid: false,
+            reason: `${childTag} can only be placed in ${validParents.join(', ')}`
+          };
+        }
+      }
+
+      // Check display type compatibility
+      const parentStyle = window.getComputedStyle(parentElement);
+      const childStyle = window.getComputedStyle(childElement);
+
+      // Block elements cannot go inside inline elements
+      if (parentStyle.display === 'inline' &&
+          (childStyle.display === 'block' || childStyle.display === 'flex' || childStyle.display === 'grid')) {
+        return {
+          valid: false,
+          reason: 'Block-level elements cannot be placed inside inline elements'
+        };
+      }
+
+      // Check if parent is a replaced element (cannot have children)
+      const replacedElements = ['IMG', 'INPUT', 'BR', 'HR', 'EMBED', 'OBJECT', 'VIDEO', 'AUDIO', 'CANVAS', 'IFRAME'];
+      if (replacedElements.includes(parentTag)) {
+        return {
+          valid: false,
+          reason: `${parentTag} elements cannot contain other elements`
+        };
+      }
+
+      return { valid: true, reason: '' };
+    },
+
+    /**
+     * Get element boundaries (min/max coordinates within parent)
+     * @param {Element} element - DOM element
+     * @returns {Object} Boundary information
+     */
+    getElementBoundaries(element) {
+      if (!element || !element.parentElement) {
+        return null;
+      }
+
+      const parent = element.parentElement;
+      const parentRect = parent.getBoundingClientRect();
+      const parentStyle = window.getComputedStyle(parent);
+
+      // Calculate available space (minus padding)
+      const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
+      const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
+      const paddingTop = parseFloat(parentStyle.paddingTop) || 0;
+      const paddingBottom = parseFloat(parentStyle.paddingBottom) || 0;
+
+      return {
+        minX: parentRect.left + paddingLeft + window.scrollX,
+        minY: parentRect.top + paddingTop + window.scrollY,
+        maxX: parentRect.right - paddingRight + window.scrollX,
+        maxY: parentRect.bottom - paddingBottom + window.scrollY,
+        maxWidth: parentRect.width - paddingLeft - paddingRight,
+        maxHeight: parentRect.height - paddingTop - paddingBottom,
+        parent: parent,
+      };
+    },
+
+    /**
+     * Get minimum size for an element based on its content
+     * @param {Element} element - DOM element
+     * @returns {Object} {minWidth, minHeight}
+     */
+    getMinimumSize(element) {
+      if (!element) {
+        return { minWidth: 50, minHeight: 50 };
+      }
+
+      const hasText = element.innerText && element.innerText.trim().length > 0;
+      const hasImage = element.tagName === 'IMG' || element.querySelector('img') !== null;
+
+      if (hasImage) {
+        // Minimum 100x100 for images
+        return { minWidth: 100, minHeight: 100 };
+      } else if (hasText) {
+        // Calculate text minimum (1 line height + padding)
+        const style = window.getComputedStyle(element);
+        const lineHeight = parseFloat(style.lineHeight) || 20;
+        const paddingTop = parseFloat(style.paddingTop) || 0;
+        const paddingBottom = parseFloat(style.paddingBottom) || 0;
+        return {
+          minWidth: 100,
+          minHeight: lineHeight + paddingTop + paddingBottom + 10
+        };
+      }
+
+      return { minWidth: 50, minHeight: 50 };
     }
   };
 

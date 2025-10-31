@@ -515,6 +515,115 @@ Apply these changes now.`, ctx.Framework, ctx.Styling))
 	return nil
 }
 
+// handleAIPreview handles AI instruction preview requests - returns DOM changes without modifying files
+func (s *Server) handleAIPreview(conn *websocket.Conn, data map[string]interface{}) error {
+	if s.verbose {
+		fmt.Println("[Proxy] Handling AI preview request")
+	}
+
+	// Extract instruction
+	instruction, ok := data["instruction"].(string)
+	if !ok || instruction == "" {
+		return fmt.Errorf("missing or invalid instruction")
+	}
+
+	// Extract screenshot (optional)
+	screenshot := getString(data, "screenshot")
+
+	// Extract elements info
+	elementsData, _ := data["elements"].([]interface{})
+	elements := make([]ai.ElementInfo, 0, len(elementsData))
+	for _, el := range elementsData {
+		elMap, ok := el.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		elements = append(elements, ai.ElementInfo{
+			TagName:   getString(elMap, "tagName"),
+			ID:        getString(elMap, "id"),
+			Classes:   getString(elMap, "classes"),
+			Selector:  getString(elMap, "selector"),
+			InnerText: getString(elMap, "innerText"),
+			OuterHTML: getString(elMap, "outerHTML"),
+		})
+	}
+
+	if len(elements) == 0 {
+		return fmt.Errorf("no elements provided")
+	}
+
+	if s.verbose {
+		fmt.Printf("[Proxy] AI preview request: '%s' for %d element(s)\n",
+			instruction[:min(50, len(instruction))], len(elements))
+	}
+
+	// Get API key from config
+	apiKey, err := config.GetAnthropicAPIKey(s.projectDir)
+	if err != nil {
+		fmt.Printf("[Proxy] ❌ Failed to get API key: %v\n", err)
+		return fmt.Errorf("API key not configured. Please set ANTHROPIC_API_KEY in .claude/settings.json")
+	}
+
+	// Create Anthropic API client
+	client := ai.NewClient(apiKey)
+
+	// Call Claude API for preview
+	fmt.Println("[Proxy] ⏳ Requesting AI preview from Claude API...")
+	changes, err := client.GeneratePreview(instruction, elements, screenshot)
+	if err != nil {
+		fmt.Printf("[Proxy] ❌ AI preview failed: %v\n", err)
+		return err
+	}
+
+	if s.verbose {
+		fmt.Printf("[Proxy] ✅ Claude returned %d DOM change(s)\n", len(changes))
+	}
+
+	// Convert ai.DOMChange to frontend format
+	changesForFrontend := make([]map[string]interface{}, 0, len(changes))
+	for _, change := range changes {
+		changeMap := map[string]interface{}{
+			"selector": change.Selector,
+			"action":   change.Action,
+		}
+
+		if change.Value != "" {
+			changeMap["value"] = change.Value
+		}
+		if change.Property != "" {
+			changeMap["property"] = change.Property
+		}
+		if change.Attribute != "" {
+			changeMap["attribute"] = change.Attribute
+		}
+
+		changesForFrontend = append(changesForFrontend, changeMap)
+	}
+
+	// Send response back to browser
+	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	err = conn.WriteJSON(map[string]interface{}{
+		"type":    "ai-preview-result",
+		"status":  "success",
+		"changes": changesForFrontend,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to send response: %w", err)
+	}
+
+	fmt.Printf("[Proxy] ✅ AI preview complete - sent %d changes to browser\n", len(changes))
+	return nil
+}
+
+// getString is a helper to safely extract string from map
+func getString(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
 // min helper function
 func min(a, b int) int {
 	if a < b {
@@ -603,6 +712,21 @@ func (s *Server) handleMessageWebSocket(w http.ResponseWriter, r *http.Request) 
 					}
 					conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 					conn.WriteJSON(map[string]interface{}{
+						"status": "error",
+						"error":  err.Error(),
+					})
+				}
+				continue
+
+			case "ai-preview":
+				// Handle AI preview request - get DOM changes without modifying code
+				if err := s.handleAIPreview(conn, data); err != nil {
+					if s.verbose {
+						fmt.Printf("[Proxy] ❌ AI preview error: %v\n", err)
+					}
+					conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+					conn.WriteJSON(map[string]interface{}{
+						"type":   "ai-preview-result",
 						"status": "error",
 						"error":  err.Error(),
 					})
