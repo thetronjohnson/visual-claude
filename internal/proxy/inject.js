@@ -37,6 +37,7 @@
       showInlineInput: false,
       showTextEditor: false,
       showStatusIndicator: false,
+      showDesignModal: false,
 
       // UI Data
       selectionRectStyle: '',
@@ -51,6 +52,15 @@
       textEditorPreview: '',
       statusText: 'Processing...',
       statusClass: '',
+
+      // Design Upload State
+      uploadedImage: null,
+      imagePreview: '',
+      designPrompt: '',
+      isAnalyzing: false,
+      analysisError: '',
+      analysisStep: '', // 'analyzing', 'sending', 'processing', ''
+      currentDesignMessageId: null,
 
       // ============================================================================
       // INITIALIZATION
@@ -527,6 +537,131 @@
       },
 
       // ============================================================================
+      // DESIGN-TO-CODE MODAL
+      // ============================================================================
+
+      openDesignModal() {
+        // Reset state
+        this.uploadedImage = null;
+        this.imagePreview = '';
+        this.designPrompt = '';
+        this.isAnalyzing = false;
+        this.analysisError = '';
+
+        this.showDesignModal = true;
+
+        // Add paste listener
+        document.addEventListener('paste', this.handleImagePaste.bind(this));
+
+        console.log('[Visual Claude] Design modal opened');
+      },
+
+      closeDesignModal() {
+        this.showDesignModal = false;
+
+        // Remove paste listener
+        document.removeEventListener('paste', this.handleImagePaste.bind(this));
+
+        // Clean up
+        this.uploadedImage = null;
+        this.imagePreview = '';
+        this.designPrompt = '';
+        this.isAnalyzing = false;
+        this.analysisError = '';
+        this.analysisStep = '';
+        this.currentDesignMessageId = null;
+
+        console.log('[Visual Claude] Design modal closed');
+      },
+
+      handleImageDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const file = e.dataTransfer?.files?.[0];
+        if (file && file.type.startsWith('image/')) {
+          this.processImage(file);
+        }
+      },
+
+      handleImagePaste(e) {
+        if (!this.showDesignModal) return;
+
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.startsWith('image/')) {
+            e.preventDefault();
+            const file = items[i].getAsFile();
+            if (file) {
+              this.processImage(file);
+            }
+            break;
+          }
+        }
+      },
+
+      async processImage(file) {
+        console.log('[Visual Claude] Processing image:', file.name);
+
+        // Create preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          this.imagePreview = e.target.result;
+          this.uploadedImage = e.target.result.split(',')[1]; // Base64 without prefix
+          console.log('[Visual Claude] ✓ Image processed');
+        };
+        reader.readAsDataURL(file);
+      },
+
+      async analyzeAndExecute() {
+        if (!this.uploadedImage || !this.designPrompt.trim()) {
+          console.warn('[Visual Claude] Cannot proceed: missing image or prompt');
+          return;
+        }
+
+        this.isAnalyzing = true;
+        this.analysisError = '';
+        this.analysisStep = 'analyzing';
+
+        const message = {
+          type: 'analyze-design',
+          image: this.uploadedImage,
+          prompt: this.designPrompt.trim(),
+        };
+
+        console.log('[Visual Claude] Sending design to Claude Vision...');
+
+        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
+          this.messageWs.send(JSON.stringify(message));
+        } else {
+          console.error('[Visual Claude] ✗ WebSocket not connected');
+          this.analysisError = 'WebSocket not connected';
+          this.isAnalyzing = false;
+          this.analysisStep = '';
+        }
+      },
+
+      handleDesignProgress(data) {
+        if (data.status === 'received') {
+          console.log('[Visual Claude] Design received, analyzing...');
+          this.currentDesignMessageId = data.id;
+          this.analysisStep = 'analyzing';
+        } else if (data.status === 'complete') {
+          console.log('[Visual Claude] Design analysis complete, implementation starting...');
+          // Close modal and show status indicator
+          this.closeDesignModal();
+          this.setStatus('processing');
+        } else if (data.status === 'error') {
+          console.error('[Visual Claude] Design error:', data.error);
+          this.analysisError = data.error || 'An error occurred';
+          this.isAnalyzing = false;
+          this.analysisStep = '';
+        }
+      },
+
+      // ============================================================================
       // STATUS INDICATOR
       // ============================================================================
 
@@ -610,6 +745,15 @@
           try {
             const data = JSON.parse(event.data);
             console.log('[Visual Claude] Message from server:', data);
+
+            // Handle design analysis progress
+            if (this.currentDesignMessageId && data.id === this.currentDesignMessageId) {
+              this.handleDesignProgress(data);
+              if (data.status === 'complete' || data.status === 'error') {
+                this.currentDesignMessageId = null;
+              }
+              return;
+            }
 
             if (data.id && data.id !== this.currentMessageId) {
               console.warn('[Visual Claude] ⚠️  Ignoring stale message');
@@ -775,13 +919,136 @@
     </div>
   `;
 
-  // Mode Toggle Toolbar
+  // Design-to-Code Modal
   app.innerHTML += `
-    <div class="vc-mode-toolbar fixed bottom-6 right-6 z-[1000003]">
+    <div x-show="showDesignModal"
+         x-transition
+         class="vc-design-modal fixed inset-0 z-[1000004] flex items-center justify-center p-4"
+         style="background: rgba(0, 0, 0, 0.5);">
+
+      <div @click.away="closeDesignModal()"
+           class="bg-white border-[2.5px] border-[#333] rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between p-4 border-b-[2.5px] border-[#333] bg-[#F19E38]">
+          <h2 class="text-lg font-bold text-black font-sans">Create Component from Design</h2>
+          <button @click="closeDesignModal()"
+                  class="w-8 h-8 flex items-center justify-center rounded-md border-[2.5px] border-[#333] bg-white hover:bg-gray-100 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-6 space-y-6">
+
+          <!-- Upload Zone -->
+          <div x-show="!imagePreview">
+            <label class="block text-sm font-semibold text-[#333] mb-2 font-sans">Upload Design Image</label>
+            <div @drop="handleImageDrop($event)"
+                 @dragover.prevent
+                 @dragenter.prevent
+                 class="border-2 border-dashed border-[#333] rounded-lg p-12 text-center cursor-pointer hover:bg-gray-50 transition-colors">
+              <input type="file"
+                     accept="image/*"
+                     @change="processImage($event.target.files[0])"
+                     class="hidden"
+                     id="vc-design-upload">
+              <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              <p class="text-lg font-semibold text-[#333] mb-2">Drop your design here</p>
+              <p class="text-sm text-gray-500 mb-4">or</p>
+              <label for="vc-design-upload"
+                     class="inline-block px-4 py-2 rounded-md text-sm font-semibold cursor-pointer bg-[#F19E38] text-black border-[2.5px] border-[#333] hover:opacity-85 transition-opacity">
+                Browse Files
+              </label>
+              <p class="text-xs text-gray-400 mt-4">You can also paste (Cmd+V) an image</p>
+            </div>
+          </div>
+
+          <!-- Image Preview -->
+          <div x-show="imagePreview" class="space-y-4">
+            <div class="flex items-center justify-between">
+              <label class="block text-sm font-semibold text-[#333] font-sans">Design Preview</label>
+              <button @click="imagePreview = ''; uploadedImage = null"
+                      class="text-xs text-red-600 hover:text-red-700 font-semibold">
+                Remove Image
+              </button>
+            </div>
+            <div class="border-[2.5px] border-[#333] rounded-lg overflow-hidden">
+              <img x-bind:src="imagePreview" alt="Design preview" class="w-full h-auto">
+            </div>
+          </div>
+
+          <!-- Prompt Input -->
+          <div x-show="imagePreview && !isAnalyzing" class="space-y-4">
+            <div>
+              <label class="block text-sm font-semibold text-[#333] mb-2 font-sans">What would you like to do with this design?</label>
+              <textarea x-model="designPrompt"
+                        @keydown.enter.meta.prevent="analyzeAndExecute()"
+                        @keydown.enter.ctrl.prevent="analyzeAndExecute()"
+                        rows="4"
+                        placeholder="Example: Create a new Card component based on this design&#10;Or: Update the existing Button component to match this style&#10;Or: Implement this navigation bar design"
+                        class="w-full p-3 border-[2.5px] border-[#333] rounded-md text-sm font-sans leading-normal resize-y focus:outline-none focus:border-[#F19E38] focus:shadow-[0_0_0_3px_rgba(241,158,56,0.1)]"></textarea>
+              <p class="text-xs text-gray-500 mt-2">
+                Claude will analyze the design and work with Claude Code to implement your request
+              </p>
+            </div>
+
+            <div x-show="analysisError"
+                 class="p-3 border-[2.5px] border-red-500 bg-red-50 rounded-md">
+              <p class="text-sm text-red-700 font-semibold" x-text="analysisError"></p>
+            </div>
+
+            <button @click="analyzeAndExecute()"
+                    x-bind:disabled="!designPrompt.trim()"
+                    class="w-full px-4 py-3 rounded-md text-sm font-semibold cursor-pointer bg-[#F19E38] text-black border-[2.5px] border-[#333] hover:opacity-85 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity">
+              Analyze & Execute
+            </button>
+          </div>
+
+          <!-- Progress Indicator -->
+          <div x-show="imagePreview && isAnalyzing" class="space-y-4">
+            <div class="p-6 border-[2.5px] border-[#F19E38] bg-orange-50 rounded-lg">
+              <div class="flex items-center gap-3 mb-3">
+                <span class="vc-spinner"></span>
+                <span class="text-sm font-semibold text-[#333]">
+                  <span x-show="analysisStep === 'analyzing'">Analyzing design with Claude Vision...</span>
+                </span>
+              </div>
+              <p class="text-xs text-gray-600">
+                Claude is examining the design and understanding the visual elements, layout, colors, and styling.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Bottom Control Bar (Pill Design)
+  app.innerHTML += `
+    <div class="vc-control-bar fixed bottom-6 right-6 z-[1000003] flex items-center bg-white border-[2.5px] border-[#333] rounded-full shadow-lg">
+      <!-- Design Upload Button -->
+      <button @click="openDesignModal()"
+              title="Create from Design"
+              class="flex items-center justify-center w-12 h-12 text-[#333] outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 rounded-l-full active:scale-95">
+        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+        </svg>
+      </button>
+
+      <!-- Divider -->
+      <div class="w-[2.5px] h-8 bg-[#333]"></div>
+
+      <!-- Mode Toggle Button -->
       <button @click="toggleMode()"
               x-bind:class="modeClass"
               x-bind:title="modeTitle"
-              class="vc-mode-toggle flex items-center justify-center w-12 h-12 border-[2.5px] border-[#333] rounded-full outline-none transition-all duration-200 ease cursor-pointer shadow-lg hover:scale-110 hover:shadow-xl active:scale-100">
+              class="vc-mode-toggle flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer rounded-r-full active:scale-95">
         <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path x-bind:d="modeIcon"></path>
         </svg>
@@ -789,7 +1056,7 @@
     </div>
   `;
 
-  // Add Tailwind utility classes for status indicator states
+  // Add Tailwind utility classes for status indicator and control bar states
   const style = document.createElement('style');
   style.textContent = `
     .vc-status-indicator.vc-processing {
@@ -806,13 +1073,21 @@
     }
 
     .vc-mode-toggle.vc-edit-mode {
-      background: #F19E38;
-      color: #000000;
+      background: #F19E38 !important;
+      color: #000000 !important;
     }
 
     .vc-mode-toggle.vc-view-mode {
-      background: #e5e7eb;
-      color: #4b5563;
+      background: transparent !important;
+      color: #6b7280 !important;
+    }
+
+    .vc-mode-toggle.vc-edit-mode:hover {
+      opacity: 0.9 !important;
+    }
+
+    .vc-mode-toggle.vc-view-mode:hover {
+      background: #f3f4f6 !important;
     }
   `;
   document.head.appendChild(style);

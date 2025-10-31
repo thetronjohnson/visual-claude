@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -41,6 +43,12 @@ func main() {
 		cfg.TargetPort = detectedPort
 	}
 
+	// Ensure Anthropic API key is available for design-to-code features
+	if err := ensureAPIKey(cfg.ProjectDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Initialize Bubble Tea TUI with alt screen mode
 	tuiModel := tui.NewModel()
 	tuiProgram := tea.NewProgram(tuiModel, tea.WithAltScreen())
@@ -68,7 +76,7 @@ func main() {
 	defer watcherInstance.Close()
 
 	// Create and start proxy server
-	server := proxy.NewServer(cfg.ProxyPort, cfg.TargetPort, bridgeInstance, watcherInstance, cfg.Verbose)
+	server := proxy.NewServer(cfg.ProxyPort, cfg.TargetPort, bridgeInstance, watcherInstance, cfg.Verbose, cfg.ProjectDir)
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -108,6 +116,45 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// ensureAPIKey checks for Anthropic API key and prompts if not found
+func ensureAPIKey(projectDir string) error {
+	// Try to find existing API key
+	_, err := config.GetAnthropicAPIKey(projectDir)
+	if err == nil {
+		fmt.Println("✓ Anthropic API key found")
+		return nil
+	}
+
+	// API key not found, prompt user
+	fmt.Println("\n⚠️  Anthropic API key not found")
+	fmt.Println("Visual Claude needs your API key for design-to-code features.")
+	fmt.Println("\nYou can find your API key at: https://console.anthropic.com/settings/keys")
+	fmt.Print("\nPaste your API key (sk-ant-...): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	apiKey, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read API key: %w", err)
+	}
+
+	apiKey = strings.TrimSpace(apiKey)
+
+	// Validate format
+	if !strings.HasPrefix(apiKey, "sk-ant-") {
+		return fmt.Errorf("invalid API key format (must start with 'sk-ant-')")
+	}
+
+	// Save to project .claude/settings.json
+	if err := config.CreateProjectSettings(projectDir, apiKey); err != nil {
+		return fmt.Errorf("failed to save API key: %w", err)
+	}
+
+	fmt.Println("✓ API key saved to .claude/settings.json")
+	fmt.Println("✓ Ready to use design-to-code features!\n")
+
+	return nil
 }
 
 // openBrowser opens the default browser on macOS
