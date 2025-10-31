@@ -62,6 +62,24 @@
       analysisStep: '', // 'analyzing', 'sending', 'processing', ''
       currentDesignMessageId: null,
 
+      // Visual Edit Mode State
+      isVisualEditMode: false,
+      selectedForVisualEdit: null,
+      pendingChanges: new Map(), // Map<selector, {transform, width, height, originalStyles}>
+      dragHandle: {
+        isDragging: false,
+        isResizing: false,
+        resizeDirection: '', // 'n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'
+        startX: 0,
+        startY: 0,
+        elementStartX: 0,
+        elementStartY: 0,
+        elementStartWidth: 0,
+        elementStartHeight: 0,
+      },
+      showDragHandles: false,
+      dragHandlesStyle: '',
+
       // ============================================================================
       // INITIALIZATION
       // ============================================================================
@@ -662,6 +680,267 @@
       },
 
       // ============================================================================
+      // VISUAL EDIT MODE
+      // ============================================================================
+
+      toggleVisualEditMode() {
+        this.isVisualEditMode = !this.isVisualEditMode;
+
+        if (this.isVisualEditMode) {
+          // Disable regular edit mode
+          if (this.isEditMode) {
+            this.disableEditMode();
+          }
+
+          // Enable visual edit mode
+          document.body.setAttribute('data-vc-mode', 'visual-edit');
+          document.addEventListener('click', this.handleVisualEditClick.bind(this), true);
+          document.addEventListener('keydown', this.handleVisualEditKeyboard.bind(this));
+          window.addEventListener('scroll', this.handleVisualEditScroll.bind(this), true);
+          window.addEventListener('resize', this.handleVisualEditResize.bind(this));
+
+          console.log('[Visual Claude] 🖱️  Visual Edit Mode enabled');
+        } else {
+          // Cleanup
+          document.body.setAttribute('data-vc-mode', 'view');
+          document.removeEventListener('click', this.handleVisualEditClick.bind(this), true);
+          document.removeEventListener('keydown', this.handleVisualEditKeyboard.bind(this));
+          window.removeEventListener('scroll', this.handleVisualEditScroll.bind(this), true);
+          window.removeEventListener('resize', this.handleVisualEditResize.bind(this));
+          this.deselectVisualElement();
+
+          console.log('[Visual Claude] Visual Edit Mode disabled');
+        }
+      },
+
+      handleVisualEditClick(e) {
+        // Ignore clicks on Visual Claude UI
+        if (e.target.closest(window.VCConstants.VC_UI_SELECTOR)) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const element = window.VCUtils.findElementUnderCursor(e.target);
+        if (element) {
+          this.selectElementForVisualEdit(element);
+        }
+      },
+
+      handleVisualEditKeyboard(e) {
+        // Escape key - deselect
+        if (e.key === 'Escape') {
+          this.deselectVisualElement();
+        }
+      },
+
+      handleVisualEditScroll() {
+        // Update drag handles position on scroll
+        if (this.showDragHandles && this.selectedForVisualEdit) {
+          this.updateDragHandlesPosition();
+        }
+      },
+
+      handleVisualEditResize() {
+        // Update drag handles position on window resize
+        if (this.showDragHandles && this.selectedForVisualEdit) {
+          this.updateDragHandlesPosition();
+        }
+      },
+
+      selectElementForVisualEdit(element) {
+        if (!element || element === this.selectedForVisualEdit) return;
+
+        // Deselect previous
+        this.deselectVisualElement();
+
+        // Select new element
+        this.selectedForVisualEdit = element;
+        element.classList.add('vc-visual-edit-selected');
+
+        // Show drag handles
+        this.showDragHandles = true;
+        this.updateDragHandlesPosition();
+
+        console.log('[Visual Claude] Selected for visual edit:', window.VCUtils.getSelector(element));
+      },
+
+      deselectVisualElement() {
+        if (this.selectedForVisualEdit) {
+          this.selectedForVisualEdit.classList.remove('vc-visual-edit-selected');
+          this.selectedForVisualEdit = null;
+        }
+        this.showDragHandles = false;
+      },
+
+      updateDragHandlesPosition() {
+        if (!this.selectedForVisualEdit) {
+          this.showDragHandles = false;
+          return;
+        }
+
+        const rect = this.selectedForVisualEdit.getBoundingClientRect();
+        this.dragHandlesStyle = `left: ${rect.left}px; top: ${rect.top}px; width: ${rect.width}px; height: ${rect.height}px;`;
+      },
+
+      startDrag(e, direction = 'move') {
+        if (!this.selectedForVisualEdit) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rect = this.selectedForVisualEdit.getBoundingClientRect();
+
+        this.dragHandle.startX = e.clientX;
+        this.dragHandle.startY = e.clientY;
+        this.dragHandle.elementStartX = rect.left;
+        this.dragHandle.elementStartY = rect.top;
+        this.dragHandle.elementStartWidth = rect.width;
+        this.dragHandle.elementStartHeight = rect.height;
+
+        if (direction === 'move') {
+          this.dragHandle.isDragging = true;
+          document.body.style.cursor = 'move';
+        } else {
+          this.dragHandle.isResizing = true;
+          this.dragHandle.resizeDirection = direction;
+        }
+
+        // Add global mouse listeners
+        document.addEventListener('mousemove', this.handleDragMove.bind(this));
+        document.addEventListener('mouseup', this.handleDragEnd.bind(this));
+      },
+
+      handleDragMove(e) {
+        if (!this.selectedForVisualEdit) return;
+        if (!this.dragHandle.isDragging && !this.dragHandle.isResizing) return;
+
+        e.preventDefault();
+
+        const deltaX = e.clientX - this.dragHandle.startX;
+        const deltaY = e.clientY - this.dragHandle.startY;
+
+        if (this.dragHandle.isDragging) {
+          // Apply transform for dragging
+          const newX = deltaX;
+          const newY = deltaY;
+
+          this.selectedForVisualEdit.style.transform = `translate(${newX}px, ${newY}px)`;
+          this.updateDragHandlesPosition();
+        } else if (this.dragHandle.isResizing) {
+          // Apply size changes for resizing
+          const direction = this.dragHandle.resizeDirection;
+          let newWidth = this.dragHandle.elementStartWidth;
+          let newHeight = this.dragHandle.elementStartHeight;
+
+          if (direction.includes('e')) {
+            newWidth = this.dragHandle.elementStartWidth + deltaX;
+          }
+          if (direction.includes('w')) {
+            newWidth = this.dragHandle.elementStartWidth - deltaX;
+          }
+          if (direction.includes('s')) {
+            newHeight = this.dragHandle.elementStartHeight + deltaY;
+          }
+          if (direction.includes('n')) {
+            newHeight = this.dragHandle.elementStartHeight - deltaY;
+          }
+
+          // Apply minimum constraints
+          newWidth = Math.max(50, newWidth);
+          newHeight = Math.max(50, newHeight);
+
+          this.selectedForVisualEdit.style.width = `${newWidth}px`;
+          this.selectedForVisualEdit.style.height = `${newHeight}px`;
+          this.updateDragHandlesPosition();
+        }
+      },
+
+      handleDragEnd(e) {
+        if (!this.selectedForVisualEdit) return;
+        if (!this.dragHandle.isDragging && !this.dragHandle.isResizing) return;
+
+        e.preventDefault();
+
+        // Store the change
+        const selector = window.VCUtils.getSelector(this.selectedForVisualEdit);
+        const computedStyle = window.getComputedStyle(this.selectedForVisualEdit);
+
+        const change = {
+          transform: this.selectedForVisualEdit.style.transform || '',
+          width: this.selectedForVisualEdit.style.width || '',
+          height: this.selectedForVisualEdit.style.height || '',
+          originalStyles: {
+            transform: computedStyle.transform !== 'none' ? computedStyle.transform : '',
+            width: computedStyle.width,
+            height: computedStyle.height,
+          }
+        };
+
+        this.pendingChanges.set(selector, change);
+        console.log('[Visual Claude] Stored pending change:', selector, change);
+
+        // Reset drag state
+        this.dragHandle.isDragging = false;
+        this.dragHandle.isResizing = false;
+        this.dragHandle.resizeDirection = '';
+        document.body.style.cursor = '';
+
+        // Remove global listeners
+        document.removeEventListener('mousemove', this.handleDragMove.bind(this));
+        document.removeEventListener('mouseup', this.handleDragEnd.bind(this));
+      },
+
+      applyPendingChanges() {
+        if (this.pendingChanges.size === 0) {
+          console.warn('[Visual Claude] No pending changes to apply');
+          return;
+        }
+
+        console.log('[Visual Claude] Applying', this.pendingChanges.size, 'pending changes');
+
+        // Convert Map to array for WebSocket
+        const changes = [];
+        this.pendingChanges.forEach((change, selector) => {
+          changes.push({
+            selector: selector,
+            styles: {
+              transform: change.transform,
+              width: change.width,
+              height: change.height,
+            }
+          });
+        });
+
+        // Send to backend
+        const message = {
+          type: 'apply-visual-edits',
+          changes: changes,
+        };
+
+        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
+          this.messageWs.send(JSON.stringify(message));
+          this.setStatus('processing');
+
+          // Clear pending changes
+          this.pendingChanges.clear();
+          this.deselectVisualElement();
+        } else {
+          console.error('[Visual Claude] ✗ WebSocket not connected');
+        }
+      },
+
+      discardPendingChanges() {
+        console.log('[Visual Claude] Discarding', this.pendingChanges.size, 'pending changes');
+
+        // Reload page to reset all inline styles
+        window.location.reload();
+      },
+
+      get pendingChangesCount() {
+        return this.pendingChanges.size;
+      },
+
+      // ============================================================================
       // STATUS INDICATOR
       // ============================================================================
 
@@ -1029,11 +1308,60 @@
     </div>
   `;
 
+  // Drag Handles Overlay
+  app.innerHTML += `
+    <div x-show="showDragHandles"
+         x-bind:style="dragHandlesStyle"
+         class="vc-drag-handles fixed z-[1000002] pointer-events-none">
+      <!-- Center Drag Handle -->
+      <div @mousedown="startDrag($event, 'move')"
+           class="absolute top-0 left-0 w-full h-full cursor-move pointer-events-auto border-2 border-[#8B5CF6] bg-[#8B5CF6] bg-opacity-5"></div>
+
+      <!-- Corner Resize Handles -->
+      <div @mousedown="startDrag($event, 'nw')"
+           class="absolute -top-1 -left-1 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-nw-resize pointer-events-auto shadow-md"></div>
+      <div @mousedown="startDrag($event, 'ne')"
+           class="absolute -top-1 -right-1 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-ne-resize pointer-events-auto shadow-md"></div>
+      <div @mousedown="startDrag($event, 'sw')"
+           class="absolute -bottom-1 -left-1 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-sw-resize pointer-events-auto shadow-md"></div>
+      <div @mousedown="startDrag($event, 'se')"
+           class="absolute -bottom-1 -right-1 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-se-resize pointer-events-auto shadow-md"></div>
+
+      <!-- Edge Resize Handles -->
+      <div @mousedown="startDrag($event, 'n')"
+           class="absolute -top-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-n-resize pointer-events-auto shadow-md"></div>
+      <div @mousedown="startDrag($event, 's')"
+           class="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-s-resize pointer-events-auto shadow-md"></div>
+      <div @mousedown="startDrag($event, 'w')"
+           class="absolute top-1/2 -left-1 transform -translate-y-1/2 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-w-resize pointer-events-auto shadow-md"></div>
+      <div @mousedown="startDrag($event, 'e')"
+           class="absolute top-1/2 -right-1 transform -translate-y-1/2 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-e-resize pointer-events-auto shadow-md"></div>
+    </div>
+  `;
+
+  // Visual Edit Toolbar (Apply/Discard)
+  app.innerHTML += `
+    <div x-show="isVisualEditMode && pendingChangesCount > 0"
+         x-transition
+         class="vc-visual-toolbar fixed bottom-24 right-6 z-[1000003] flex items-center gap-2 bg-white border-[2.5px] border-[#333] rounded-lg shadow-lg p-2">
+      <span class="text-xs font-semibold text-[#333] px-2" x-text="pendingChangesCount + ' change' + (pendingChangesCount !== 1 ? 's' : '')"></span>
+      <button @click="discardPendingChanges()"
+              class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer bg-gray-200 text-[#333] border-[2.5px] border-[#333] hover:opacity-85 active:scale-95 transition-all">
+        Discard
+      </button>
+      <button @click="applyPendingChanges()"
+              class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer bg-green-500 text-white border-[2.5px] border-[#333] hover:opacity-85 active:scale-95 transition-all">
+        Apply Changes
+      </button>
+    </div>
+  `;
+
   // Bottom Control Bar (Pill Design)
   app.innerHTML += `
     <div class="vc-control-bar fixed bottom-6 right-6 z-[1000003] flex items-center bg-white border-[2.5px] border-[#333] rounded-full shadow-lg">
       <!-- Design Upload Button -->
       <button @click="openDesignModal()"
+              x-show="!isVisualEditMode"
               title="Create from Design"
               class="flex items-center justify-center w-12 h-12 text-[#333] outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 rounded-l-full active:scale-95">
         <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -1042,15 +1370,40 @@
       </button>
 
       <!-- Divider -->
+      <div x-show="!isVisualEditMode" class="w-[2.5px] h-8 bg-[#333]"></div>
+
+      <!-- Visual Edit Mode Button -->
+      <button @click="toggleVisualEditMode()"
+              x-bind:class="{'bg-[#8B5CF6] text-white': isVisualEditMode, 'text-[#333] hover:bg-gray-100': !isVisualEditMode}"
+              x-bind:title="isVisualEditMode ? 'Visual Edit Mode - Click to disable' : 'Enable Visual Edit Mode'"
+              class="flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer active:scale-95"
+              x-bind:class="{'rounded-l-full': isVisualEditMode, '': !isVisualEditMode}">
+        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+        </svg>
+      </button>
+
+      <!-- Divider -->
       <div class="w-[2.5px] h-8 bg-[#333]"></div>
 
-      <!-- Mode Toggle Button -->
+      <!-- Edit/View Mode Toggle Button -->
       <button @click="toggleMode()"
+              x-show="!isVisualEditMode"
               x-bind:class="modeClass"
               x-bind:title="modeTitle"
               class="vc-mode-toggle flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer rounded-r-full active:scale-95">
         <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path x-bind:d="modeIcon"></path>
+        </svg>
+      </button>
+
+      <!-- Exit Visual Mode Button (when in visual mode) -->
+      <button @click="toggleVisualEditMode()"
+              x-show="isVisualEditMode"
+              title="Exit Visual Edit Mode"
+              class="flex items-center justify-center w-12 h-12 text-[#333] outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 rounded-r-full active:scale-95">
+        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
         </svg>
       </button>
     </div>
@@ -1088,6 +1441,12 @@
 
     .vc-mode-toggle.vc-view-mode:hover {
       background: #f3f4f6 !important;
+    }
+
+    /* Visual Edit Mode Styles */
+    .vc-visual-edit-selected {
+      outline: 2px solid #8B5CF6 !important;
+      outline-offset: 2px !important;
     }
   `;
   document.head.appendChild(style);

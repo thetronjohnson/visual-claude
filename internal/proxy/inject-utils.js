@@ -49,7 +49,8 @@
 
     // VC UI Selector (for skipping our own elements)
     VC_UI_SELECTOR: '.vc-selection-rect, .vc-selection-info, .vc-inline-input, ' +
-                   '.vc-status-indicator, .vc-text-editor, .vc-mode-toolbar, .vc-design-modal, .vc-control-bar',
+                   '.vc-status-indicator, .vc-text-editor, .vc-mode-toolbar, .vc-design-modal, ' +
+                   '.vc-control-bar, .vc-drag-handles, .vc-visual-toolbar',
   };
 
   // ============================================================================

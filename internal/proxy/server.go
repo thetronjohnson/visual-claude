@@ -266,6 +266,139 @@ Be specific and detailed so a developer can implement this accurately.`, ctx.Str
 	return nil
 }
 
+// handleApplyVisualEdits handles applying visual drag/resize changes to the codebase
+func (s *Server) handleApplyVisualEdits(conn *websocket.Conn, data map[string]interface{}) error {
+	if s.verbose {
+		fmt.Println("[Proxy] Handling apply-visual-edits request")
+	}
+
+	// Extract changes array
+	changesData, ok := data["changes"].([]interface{})
+	if !ok || len(changesData) == 0 {
+		return fmt.Errorf("missing or invalid changes array")
+	}
+
+	// Analyze project context
+	ctx, err := analyzer.AnalyzeProject(s.projectDir)
+	if err != nil {
+		if s.verbose {
+			fmt.Printf("[Proxy] Failed to analyze project: %v\n", err)
+		}
+		// Use defaults if analysis fails
+		ctx = &analyzer.ProjectContext{
+			Framework:  "react",
+			Styling:    "css",
+			TypeScript: false,
+		}
+	}
+
+	if s.verbose {
+		fmt.Printf("[Proxy] Detected project: %s\n", ctx.String())
+	}
+
+	// Build detailed instruction for Claude
+	var instruction strings.Builder
+	instruction.WriteString("I made the following visual changes to elements:\n\n")
+
+	for i, changeData := range changesData {
+		changeMap, ok := changeData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		selector, _ := changeMap["selector"].(string)
+		stylesData, _ := changeMap["styles"].(map[string]interface{})
+
+		instruction.WriteString(fmt.Sprintf("%d. Element: %s\n", i+1, selector))
+
+		if transform, ok := stylesData["transform"].(string); ok && transform != "" {
+			instruction.WriteString(fmt.Sprintf("   - Position changed: %s\n", transform))
+		}
+		if width, ok := stylesData["width"].(string); ok && width != "" {
+			instruction.WriteString(fmt.Sprintf("   - Width: %s\n", width))
+		}
+		if height, ok := stylesData["height"].(string); ok && height != "" {
+			instruction.WriteString(fmt.Sprintf("   - Height: %s\n", height))
+		}
+		instruction.WriteString("\n")
+	}
+
+	instruction.WriteString(fmt.Sprintf(`
+Please analyze the codebase and apply these visual changes appropriately:
+
+**Project Context:**
+- Framework: %s
+- Styling: %s
+
+**Instructions:**
+1. Identify where these elements are defined in the code
+2. Apply the position/size changes using the project's styling approach:
+   - If using Tailwind CSS: Update className with appropriate utility classes (absolute, left-*, top-*, w-*, h-*)
+   - If using styled-components/CSS-in-JS: Update the styled component definitions
+   - If using CSS files: Update the relevant stylesheet with the new values
+   - If using inline styles: Update the style prop/attribute
+
+3. Consider the layout context:
+   - If the element needs to be positioned absolutely, ensure parent has position: relative
+   - Maintain responsive design - don't break mobile layouts
+   - Preserve any existing animations or transitions
+
+4. Make the changes permanent in the appropriate files
+5. Ensure the code remains clean and maintainable
+
+Apply these changes now.`, ctx.Framework, ctx.Styling))
+
+	// Create a bridge message
+	msg := bridge.Message{
+		ID: int(time.Now().UnixNano() / 1000000),
+		Area: bridge.AreaInfo{
+			X:            0,
+			Y:            0,
+			Width:        0,
+			Height:       0,
+			ElementCount: len(changesData),
+			Elements:     []bridge.ElementInfo{},
+		},
+		Instruction: instruction.String(),
+		Screenshot:  "",
+	}
+
+	if s.verbose {
+		fmt.Printf("[Proxy] Sending to Claude Code (%d changes)\n", len(changesData))
+	}
+
+	// Send acknowledgment to frontend
+	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	conn.WriteJSON(map[string]interface{}{
+		"id":     msg.ID,
+		"status": "received",
+	})
+
+	// Send to Claude Code through the bridge
+	fmt.Printf("[Proxy] ⏳ Processing visual edits (ID %d)...\n", msg.ID)
+	err = s.bridge.HandleMessage(msg)
+
+	// Send completion status
+	if err != nil {
+		fmt.Printf("[Proxy] ❌ Error processing visual edits: %v\n", err)
+		conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		conn.WriteJSON(map[string]interface{}{
+			"id":     msg.ID,
+			"status": "error",
+			"error":  err.Error(),
+		})
+	} else {
+		fmt.Printf("[Proxy] 🎉 Visual edits applied successfully (ID %d)\n", msg.ID)
+		conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		conn.WriteJSON(map[string]interface{}{
+			"id":     msg.ID,
+			"status": "complete",
+		})
+	}
+
+	return nil
+}
+
 // min helper function
 func min(a, b int) int {
 	if a < b {
@@ -337,6 +470,20 @@ func (s *Server) handleMessageWebSocket(w http.ResponseWriter, r *http.Request) 
 				if err := s.handleAnalyzeDesign(conn, data); err != nil {
 					if s.verbose {
 						fmt.Printf("[Proxy] ❌ Design analysis error: %v\n", err)
+					}
+					conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+					conn.WriteJSON(map[string]interface{}{
+						"status": "error",
+						"error":  err.Error(),
+					})
+				}
+				continue
+
+			case "apply-visual-edits":
+				// Handle visual edits - this will block until Claude Code completes
+				if err := s.handleApplyVisualEdits(conn, data); err != nil {
+					if s.verbose {
+						fmt.Printf("[Proxy] ❌ Visual edits error: %v\n", err)
 					}
 					conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 					conn.WriteJSON(map[string]interface{}{

@@ -148,12 +148,31 @@ body[data-vc-mode="edit"] .vc-inline-input *,
 body[data-vc-mode="edit"] .vc-text-editor,
 body[data-vc-mode="edit"] .vc-text-editor *,
 body[data-vc-mode="edit"] .vc-mode-toolbar,
-body[data-vc-mode="edit"] .vc-mode-toolbar * {
+body[data-vc-mode="edit"] .vc-mode-toolbar *,
+body[data-vc-mode="edit"] .vc-control-bar,
+body[data-vc-mode="edit"] .vc-control-bar *,
+body[data-vc-mode="edit"] .vc-design-modal,
+body[data-vc-mode="edit"] .vc-design-modal * {
   cursor: auto !important;
 }
 
 /* Pointer cursor for VC buttons */
 body[data-vc-mode="edit"] .vc-inline-button,
-body[data-vc-mode="edit"] .vc-mode-toggle {
+body[data-vc-mode="edit"] .vc-mode-toggle,
+body[data-vc-mode="edit"] button {
   cursor: pointer !important;
+}
+
+/* Visual Edit Mode - proper cursors for UI elements */
+body[data-vc-mode="visual-edit"] .vc-control-bar,
+body[data-vc-mode="visual-edit"] .vc-control-bar *,
+body[data-vc-mode="visual-edit"] .vc-visual-toolbar,
+body[data-vc-mode="visual-edit"] .vc-visual-toolbar *,
+body[data-vc-mode="visual-edit"] button {
+  cursor: pointer !important;
+}
+
+body[data-vc-mode="visual-edit"] .vc-drag-handles > div {
+  /* Resize/drag handles keep their specific cursors (move, nw-resize, etc.) */
+  cursor: inherit !important;
 }
