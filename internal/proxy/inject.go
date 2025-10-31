@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// InjectScript injects JavaScript into HTML responses
-func InjectScript(resp *http.Response, scriptURL string) error {
+// InjectScript injects JavaScript and CSS into HTML responses
+func InjectScript(resp *http.Response, baseURL string) error {
 	// Only inject into HTML responses
 	contentType := resp.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "text/html") {
@@ -23,8 +23,20 @@ func InjectScript(resp *http.Response, scriptURL string) error {
 	}
 	resp.Body.Close()
 
-	// Create the injection script tag
-	injection := fmt.Sprintf(`<script src="%s"></script>`, scriptURL)
+	// Create injection tags in correct order:
+	// 1. Tailwind CSS (non-blocking)
+	// 2. inject.css (custom styles)
+	// 3. inject-utils.js (utilities - must load before main script)
+	// 4. inject.js (main application script - deferred)
+	// 5. Alpine.js (must load last with defer)
+	injection := fmt.Sprintf(`
+	<!-- Visual Claude - Alpine.js + Tailwind CSS + Custom Scripts -->
+	<script src="%s/tailwind.min.js"></script>
+	<link rel="stylesheet" href="%s/inject.css">
+	<script src="%s/inject-utils.js"></script>
+	<script defer src="%s/inject.js"></script>
+	<script defer src="%s/alpine.min.js"></script>
+`, baseURL, baseURL, baseURL, baseURL, baseURL)
 
 	// Try to inject before </body>, otherwise before </html>, otherwise at the end
 	bodyStr := string(body)

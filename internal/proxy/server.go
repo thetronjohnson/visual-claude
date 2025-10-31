@@ -18,8 +18,8 @@ import (
 	"github.com/thetronjohnson/visual-claude/internal/watcher"
 )
 
-//go:embed inject.js
-var clientScript embed.FS
+//go:embed inject.js inject-utils.js inject.css alpine.min.js tailwind.min.js
+var clientAssets embed.FS
 
 //go:embed cursor.svg
 var cursorAsset []byte
@@ -68,9 +68,9 @@ func (s *Server) Start() error {
 		req.Host = target.Host
 	}
 
-	// Modify responses to inject our script
+	// Modify responses to inject our scripts and styles
 	proxy.ModifyResponse = func(resp *http.Response) error {
-		return InjectScript(resp, "/__visual-claude/inject.js")
+		return InjectScript(resp, "/__visual-claude")
 	}
 
 	// Suppress "context canceled" errors that occur during normal operation
@@ -87,8 +87,12 @@ func (s *Server) Start() error {
 	// Set up HTTP handlers
 	mux := http.NewServeMux()
 
-	// Serve the injected JavaScript
-	mux.HandleFunc("/__visual-claude/inject.js", s.handleInjectScript)
+	// Serve all client assets
+	mux.HandleFunc("/__visual-claude/alpine.min.js", s.handleAsset("alpine.min.js", "application/javascript"))
+	mux.HandleFunc("/__visual-claude/tailwind.min.js", s.handleAsset("tailwind.min.js", "application/javascript"))
+	mux.HandleFunc("/__visual-claude/inject.css", s.handleAsset("inject.css", "text/css"))
+	mux.HandleFunc("/__visual-claude/inject-utils.js", s.handleAsset("inject-utils.js", "application/javascript"))
+	mux.HandleFunc("/__visual-claude/inject.js", s.handleAsset("inject.js", "application/javascript"))
 
 	// Serve the custom cursor asset
 	mux.HandleFunc("/__visual-claude/cursor.svg", s.handleCursorAsset)
@@ -117,16 +121,19 @@ func (s *Server) Start() error {
 	return s.httpServer.ListenAndServe()
 }
 
-// handleInjectScript serves the client-side JavaScript
-func (s *Server) handleInjectScript(w http.ResponseWriter, r *http.Request) {
-	content, err := clientScript.ReadFile("inject.js")
-	if err != nil {
-		http.Error(w, "Failed to load script", http.StatusInternalServerError)
-		return
-	}
+// handleAsset returns a handler function for serving embedded assets
+func (s *Server) handleAsset(filename, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		content, err := clientAssets.ReadFile(filename)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to load asset: %s", filename), http.StatusInternalServerError)
+			return
+		}
 
-	w.Header().Set("Content-Type", "application/javascript")
-	w.Write(content)
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(content)
+	}
 }
 
 // handleCursorAsset serves the custom cursor SVG

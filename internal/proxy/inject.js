@@ -1,387 +1,808 @@
+// Visual Claude - Alpine.js Component Architecture
 (function() {
   'use strict';
 
-  // State
-  let isDragging = false;
-  let dragStart = null;
-  let dragEnd = null;
-  let dragStartTime = null;
-  let selectedElements = [];
-  let reloadWs = null;
-  let messageWs = null;
-  let isProcessing = false;
-  let messageIdCounter = 0;
-  let currentMessageId = null;
+  // Note: This script loads with defer, so VCUtils is guaranteed to be loaded
+  // Alpine.js loads after this script, so it will pick up our component definition
 
-  // Hover state
-  let currentHoveredElement = null;
-  let lastHoverCheckTime = 0;
-  const HOVER_CHECK_THROTTLE = 16; // ~60fps
+  // ============================================================================
+  // MAIN ALPINE COMPONENT
+  // ============================================================================
 
-  // Text editing state
-  let currentEditingElement = null;
+  window.visualClaude = function() {
+    return {
+      // State
+      isDragging: false,
+      dragStart: null,
+      dragEnd: null,
+      dragStartTime: null,
+      selectedElements: [],
+      isProcessing: false,
+      messageIdCounter: 0,
+      currentMessageId: null,
+      currentHoveredElement: null,
+      lastHoverCheckTime: 0,
+      currentEditingElement: null,
+      clickTimeout: null,
+      processingTimeout: null,
+      isEditMode: true,
 
-  // Click handling state
-  let clickTimeout = null;
+      // WebSockets
+      reloadWs: null,
+      messageWs: null,
 
-  // Processing timeout handling
-  let processingTimeout = null;
-  const PROCESSING_TIMEOUT = 300000; // 5 minutes max
+      // UI State
+      showSelectionRect: false,
+      showSelectionInfo: false,
+      showInlineInput: false,
+      showTextEditor: false,
+      showStatusIndicator: false,
 
-  // Mode toggle state
-  let isEditMode = true;
-  const EDIT_MODE_KEY = 'vc-edit-mode';
-  const eventHandlers = {
-    mousedown: null,
-    mousemove: null,
-    mouseup: null,
-    mouseleave: null,
-    dblclick: null,
-    click: null
+      // UI Data
+      selectionRectStyle: '',
+      selectionInfoStyle: '',
+      selectionInfoText: '',
+      inlineInputStyle: '',
+      inlineInputBadge: '',
+      inlineInputText: '',
+      textEditorStyle: '',
+      textEditorLabel: 'Edit text content',
+      textEditorValue: '',
+      textEditorPreview: '',
+      statusText: 'Processing...',
+      statusClass: '',
+
+      // ============================================================================
+      // INITIALIZATION
+      // ============================================================================
+
+      init() {
+        console.log('[Visual Claude] Initializing Alpine component...');
+
+        // Initialize mode from localStorage
+        const savedMode = localStorage.getItem(window.VCConstants.EDIT_MODE_KEY);
+        if (savedMode === 'false') {
+          this.isEditMode = false;
+          this.disableEditMode();
+        } else {
+          this.isEditMode = true;
+          this.enableEditMode();
+        }
+
+        // Connect WebSockets
+        this.connectWebSockets();
+
+        // Keyboard shortcut: Cmd/Ctrl + Shift + E
+        document.addEventListener('keydown', (e) => {
+          if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'E') {
+            e.preventDefault();
+            this.toggleMode();
+          }
+        });
+
+        console.log('[Visual Claude] Initialized ✓');
+        console.log('[Visual Claude] Toggle modes using Cmd/Ctrl+Shift+E or the toolbar');
+      },
+
+      // ============================================================================
+      // MODE MANAGEMENT
+      // ============================================================================
+
+      enableEditMode() {
+        this.isEditMode = true;
+        localStorage.setItem(window.VCConstants.EDIT_MODE_KEY, 'true');
+        document.body.setAttribute('data-vc-mode', 'edit');
+
+        // Add event listeners
+        document.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        document.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        document.addEventListener('mouseleave', this.handleMouseLeave.bind(this));
+        document.addEventListener('dblclick', this.handleDoubleClick.bind(this));
+        document.addEventListener('click', this.handleClick.bind(this), true);
+
+        console.log('[Visual Claude] ✏️  Edit Mode enabled');
+      },
+
+      disableEditMode() {
+        this.isEditMode = false;
+        localStorage.setItem(window.VCConstants.EDIT_MODE_KEY, 'false');
+        document.body.setAttribute('data-vc-mode', 'view');
+
+        // Clean up
+        this.hideInlineInput();
+        this.hideTextEditor();
+        this.removeElementHighlight();
+        this.showSelectionRect = false;
+        this.showSelectionInfo = false;
+        this.isDragging = false;
+        this.dragStart = null;
+        this.dragEnd = null;
+
+        if (this.clickTimeout) {
+          clearTimeout(this.clickTimeout);
+          this.clickTimeout = null;
+        }
+
+        if (this.processingTimeout) {
+          clearTimeout(this.processingTimeout);
+          this.processingTimeout = null;
+        }
+
+        console.log('[Visual Claude] 👁️  View Mode enabled');
+      },
+
+      toggleMode() {
+        if (this.isEditMode) {
+          this.disableEditMode();
+        } else {
+          this.enableEditMode();
+        }
+      },
+
+      // ============================================================================
+      // MOUSE EVENT HANDLERS
+      // ============================================================================
+
+      handleMouseDown(e) {
+        if (e.target.closest(window.VCConstants.VC_UI_SELECTOR)) return;
+        if (this.isProcessing) return;
+        if (!this.isEditMode) return;
+
+        if (this.showTextEditor) {
+          this.hideTextEditor();
+        }
+
+        if (this.currentHoveredElement) {
+          this.removeElementHighlight();
+        }
+
+        this.isDragging = true;
+        this.dragStart = { x: e.clientX, y: e.clientY };
+        this.dragEnd = { x: e.clientX, y: e.clientY };
+        this.dragStartTime = Date.now();
+      },
+
+      handleMouseMove(e) {
+        if (!this.isEditMode) return;
+
+        if (this.isDragging) {
+          this.dragEnd = { x: e.clientX, y: e.clientY };
+
+          const distance = window.VCUtils.calculateDistance(this.dragStart, this.dragEnd);
+
+          if (distance > window.VCConstants.MIN_DRAG_DISTANCE) {
+            this.showSelectionRect = true;
+            this.updateSelectionRect();
+            this.updateSelectionInfo();
+          }
+        } else {
+          this.handleHoverThrottled(e);
+        }
+      },
+
+      handleMouseUp(e) {
+        if (!this.isDragging || !this.isEditMode) return;
+
+        const dragDuration = Date.now() - this.dragStartTime;
+        const distance = window.VCUtils.calculateDistance(this.dragStart, this.dragEnd);
+
+        this.isDragging = false;
+        this.showSelectionRect = false;
+        this.showSelectionInfo = false;
+
+        // Single click detection
+        if (distance < window.VCConstants.CLICK_MAX_DISTANCE &&
+            dragDuration < window.VCConstants.CLICK_MAX_DURATION) {
+          console.log('[Visual Claude] Single click detected');
+
+          if (this.clickTimeout) {
+            clearTimeout(this.clickTimeout);
+          }
+
+          this.clickTimeout = setTimeout(() => {
+            const clickedElement = window.VCUtils.findElementUnderCursor(e.target);
+
+            if (!clickedElement) {
+              console.log('[Visual Claude] No valid element found');
+              return;
+            }
+
+            const rect = clickedElement.getBoundingClientRect();
+            const bounds = {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height,
+            };
+
+            this.openInlineInput(e.clientX, e.clientY, bounds, [clickedElement]);
+            this.clickTimeout = null;
+          }, window.VCConstants.CLICK_DOUBLE_CLICK_DELAY);
+
+          return;
+        }
+
+        // Drag selection
+        const bounds = window.VCUtils.calculateBounds(this.dragStart, this.dragEnd);
+
+        if (bounds.width < window.VCConstants.MIN_SELECTION_SIZE ||
+            bounds.height < window.VCConstants.MIN_SELECTION_SIZE) {
+          console.log('[Visual Claude] Selection too small');
+          return;
+        }
+
+        const elements = window.VCUtils.getElementsInBounds(bounds);
+
+        if (elements.length === 0) {
+          console.log('[Visual Claude] No elements found');
+          return;
+        }
+
+        console.log('[Visual Claude] Selection successful:', elements.length, 'elements');
+        this.openInlineInput(e.clientX, e.clientY, bounds, elements);
+      },
+
+      handleMouseLeave() {
+        if (this.currentHoveredElement && this.isEditMode) {
+          this.removeElementHighlight();
+        }
+      },
+
+      handleClick(e) {
+        if (!this.isEditMode) return;
+        if (e.target.closest(window.VCConstants.VC_UI_SELECTOR)) return;
+
+        // Prevent default behavior in edit mode
+        if (e.target.tagName === 'A' || e.target.closest('a')) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.closest('button')) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      },
+
+      handleDoubleClick(e) {
+        if (!this.isEditMode) return;
+        if (e.target.closest(window.VCConstants.VC_UI_SELECTOR)) return;
+        if (this.isProcessing) return;
+
+        if (this.clickTimeout) {
+          clearTimeout(this.clickTimeout);
+          this.clickTimeout = null;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        let element = e.target;
+        const linkElement = element.closest('a');
+        if (linkElement && window.VCUtils.isTextEditable(linkElement)) {
+          element = linkElement;
+        }
+
+        if (window.VCUtils.isTextEditable(element)) {
+          this.openTextEditor(element);
+        }
+      },
+
+      // ============================================================================
+      // HOVER HIGHLIGHTING
+      // ============================================================================
+
+      handleHoverThrottled(e) {
+        const now = Date.now();
+        if (now - this.lastHoverCheckTime < window.VCConstants.HOVER_CHECK_THROTTLE) return;
+        this.lastHoverCheckTime = now;
+        this.handleHover(e);
+      },
+
+      handleHover(e) {
+        if (this.isDragging) {
+          if (this.currentHoveredElement) {
+            this.removeElementHighlight();
+          }
+          return;
+        }
+
+        if (this.isProcessing || this.showInlineInput || this.showTextEditor) {
+          if (this.currentHoveredElement) {
+            this.removeElementHighlight();
+          }
+          return;
+        }
+
+        const element = window.VCUtils.findElementUnderCursor(e.target);
+
+        if (element !== this.currentHoveredElement) {
+          this.removeElementHighlight();
+          if (element) {
+            this.applyElementHighlight(element);
+          }
+        }
+      },
+
+      applyElementHighlight(element) {
+        if (!element) return;
+
+        element.classList.add('vc-element-highlight');
+        this.currentHoveredElement = element;
+
+        const label = window.VCUtils.getElementLabel(element);
+        const rect = element.getBoundingClientRect();
+
+        this.selectionInfoText = label;
+        this.selectionInfoStyle = `left: ${rect.left + 10}px; top: ${rect.top - 30}px;`;
+        this.showSelectionInfo = true;
+      },
+
+      removeElementHighlight() {
+        if (this.currentHoveredElement) {
+          this.currentHoveredElement.classList.remove('vc-element-highlight');
+          this.currentHoveredElement = null;
+        }
+        this.showSelectionInfo = false;
+      },
+
+      // ============================================================================
+      // SELECTION RECT & INFO
+      // ============================================================================
+
+      updateSelectionRect() {
+        const bounds = window.VCUtils.calculateBounds(this.dragStart, this.dragEnd);
+        this.selectionRectStyle = `left: ${bounds.left}px; top: ${bounds.top}px; width: ${bounds.width}px; height: ${bounds.height}px;`;
+      },
+
+      updateSelectionInfo() {
+        const width = Math.abs(this.dragEnd.x - this.dragStart.x);
+        const height = Math.abs(this.dragEnd.y - this.dragStart.y);
+        this.selectionInfoText = window.VCUtils.formatAreaSize(width, height);
+        this.selectionInfoStyle = `left: ${this.dragEnd.x + 10}px; top: ${this.dragEnd.y + 10}px;`;
+        this.showSelectionInfo = true;
+      },
+
+      // ============================================================================
+      // INLINE INPUT
+      // ============================================================================
+
+      openInlineInput(cursorX, cursorY, bounds, elements) {
+        this.selectedElements = elements;
+
+        const areaSize = window.VCUtils.formatAreaSize(bounds.width, bounds.height);
+        const elementCount = elements.length;
+
+        this.inlineInputBadge = `${elementCount} element${elementCount !== 1 ? 's' : ''} · ${areaSize}`;
+        this.inlineInputText = '';
+
+        const pos = window.VCUtils.positionInViewport(
+          cursorX, cursorY,
+          window.VCConstants.INPUT_WIDTH,
+          window.VCConstants.INPUT_HEIGHT
+        );
+
+        this.inlineInputStyle = `left: ${pos.left}px; top: ${pos.top}px;`;
+        this.showInlineInput = true;
+
+        // Focus textarea after render
+        this.$nextTick(() => {
+          const textarea = document.querySelector('.vc-inline-text');
+          if (textarea) textarea.focus();
+        });
+      },
+
+      hideInlineInput() {
+        this.showInlineInput = false;
+        this.selectedElements = [];
+        this.inlineInputText = '';
+      },
+
+      async sendInlineMessage() {
+        if (!this.selectedElements.length || !this.inlineInputText.trim()) {
+          console.warn('[Visual Claude] Cannot send: no elements or instruction');
+          return;
+        }
+
+        const bounds = window.VCUtils.calculateBounds(this.dragStart, this.dragEnd);
+        const screenshot = await window.VCUtils.captureAreaScreenshot(bounds);
+        const elementsInfo = this.selectedElements.map(el => window.VCUtils.getElementInfo(el));
+
+        const messageId = ++this.messageIdCounter;
+        this.currentMessageId = messageId;
+
+        const message = {
+          id: messageId,
+          area: {
+            x: bounds.left,
+            y: bounds.top,
+            width: bounds.width,
+            height: bounds.height,
+            elementCount: elementsInfo.length,
+            elements: elementsInfo,
+          },
+          instruction: this.inlineInputText.trim(),
+          screenshot: screenshot,
+        };
+
+        console.log('[Visual Claude] Sending message:', messageId);
+
+        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
+          this.setStatus('processing');
+          this.messageWs.send(JSON.stringify(message));
+          console.log('[Visual Claude] ✓ Message sent');
+        } else {
+          console.error('[Visual Claude] ✗ WebSocket not connected');
+        }
+
+        this.hideInlineInput();
+      },
+
+      // ============================================================================
+      // TEXT EDITOR
+      // ============================================================================
+
+      openTextEditor(element) {
+        if (!element) return;
+
+        this.currentEditingElement = element;
+        this.removeElementHighlight();
+
+        const currentText = element.innerText.trim();
+
+        this.textEditorValue = currentText;
+        this.textEditorPreview = `Current: "${currentText.substring(0, 100)}${currentText.length > 100 ? '...' : ''}"`;
+        this.textEditorLabel = `Edit ${element.tagName.toLowerCase()} text`;
+
+        const rect = element.getBoundingClientRect();
+        const pos = window.VCUtils.positionInViewport(
+          rect.left, rect.bottom + 10,
+          window.VCConstants.EDITOR_WIDTH,
+          window.VCConstants.EDITOR_HEIGHT
+        );
+
+        this.textEditorStyle = `left: ${pos.left}px; top: ${pos.top}px;`;
+        this.showTextEditor = true;
+
+        this.$nextTick(() => {
+          const input = document.querySelector('.vc-text-editor-input');
+          if (input) {
+            input.focus();
+            input.select();
+          }
+        });
+      },
+
+      hideTextEditor() {
+        this.showTextEditor = false;
+        this.currentEditingElement = null;
+        this.textEditorValue = '';
+      },
+
+      async saveTextEdit() {
+        if (!this.currentEditingElement) return;
+
+        const newText = this.textEditorValue.trim();
+        const oldText = this.currentEditingElement.innerText.trim();
+
+        if (!newText || newText === oldText) {
+          this.hideTextEditor();
+          return;
+        }
+
+        const elementInfo = window.VCUtils.getElementInfo(this.currentEditingElement);
+        const instruction = `Change the text content from "${oldText}" to "${newText}"`;
+
+        const messageId = ++this.messageIdCounter;
+        this.currentMessageId = messageId;
+
+        const message = {
+          id: messageId,
+          area: {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            elementCount: 1,
+            elements: [elementInfo],
+          },
+          instruction: instruction,
+          screenshot: '',
+        };
+
+        console.log('[Visual Claude] Sending text edit:', messageId);
+
+        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
+          this.setStatus('processing');
+          this.messageWs.send(JSON.stringify(message));
+          console.log('[Visual Claude] ✓ Text edit sent');
+        } else {
+          console.error('[Visual Claude] ✗ WebSocket not connected');
+        }
+
+        this.hideTextEditor();
+      },
+
+      // ============================================================================
+      // STATUS INDICATOR
+      // ============================================================================
+
+      setStatus(status) {
+        this.statusClass = '';
+
+        if (status === 'processing') {
+          this.statusText = '<span class="vc-spinner"></span>Processing...';
+          this.statusClass = 'vc-processing';
+          this.showStatusIndicator = true;
+          this.isProcessing = true;
+
+          if (this.processingTimeout) {
+            clearTimeout(this.processingTimeout);
+          }
+          this.processingTimeout = setTimeout(() => {
+            console.warn('[Visual Claude] ⚠️  Processing timeout - reloading');
+            window.location.reload();
+          }, window.VCConstants.PROCESSING_TIMEOUT);
+
+        } else if (status === 'complete') {
+          if (this.processingTimeout) {
+            clearTimeout(this.processingTimeout);
+            this.processingTimeout = null;
+          }
+
+          this.statusText = 'Done ✓';
+          this.statusClass = 'vc-complete';
+          this.showStatusIndicator = true;
+          this.isProcessing = false;
+
+          console.log('[Visual Claude] Task completed, reloading...');
+          setTimeout(() => {
+            window.location.reload();
+          }, window.VCConstants.RELOAD_DELAY);
+
+        } else {
+          if (this.processingTimeout) {
+            clearTimeout(this.processingTimeout);
+            this.processingTimeout = null;
+          }
+
+          this.showStatusIndicator = false;
+          this.isProcessing = false;
+        }
+      },
+
+      // ============================================================================
+      // WEBSOCKET CONNECTIONS
+      // ============================================================================
+
+      connectWebSockets() {
+        // Reload WebSocket
+        this.reloadWs = new WebSocket(window.VCUtils.getWebSocketURL(window.VCConstants.WS_RELOAD_PATH));
+
+        this.reloadWs.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === 'reload') {
+            console.log('[Visual Claude] Reloading page...');
+            window.location.reload();
+          }
+        };
+
+        this.reloadWs.onerror = (error) => {
+          console.error('[Visual Claude] Reload WebSocket error:', error);
+        };
+
+        this.reloadWs.onclose = () => {
+          console.log('[Visual Claude] Reload WebSocket closed, reconnecting...');
+          setTimeout(() => this.connectWebSockets(), window.VCConstants.WS_RECONNECT_DELAY);
+        };
+
+        // Message WebSocket
+        this.messageWs = new WebSocket(window.VCUtils.getWebSocketURL(window.VCConstants.WS_MESSAGE_PATH));
+
+        this.messageWs.onopen = () => {
+          console.log('[Visual Claude] Connected to Claude Code');
+        };
+
+        this.messageWs.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('[Visual Claude] Message from server:', data);
+
+            if (data.id && data.id !== this.currentMessageId) {
+              console.warn('[Visual Claude] ⚠️  Ignoring stale message');
+              return;
+            }
+
+            if (!this.currentMessageId && (data.status === 'complete' || data.status === 'error')) {
+              console.warn('[Visual Claude] ⚠️  Ignoring completion with no active request');
+              return;
+            }
+
+            if (data.status === 'received') {
+              console.log('[Visual Claude] ✅ Server acknowledged');
+            } else if (data.status === 'complete') {
+              console.log('[Visual Claude] 🎉 Task completed');
+              this.setStatus('complete');
+              this.currentMessageId = null;
+            } else if (data.status === 'error') {
+              console.error('[Visual Claude] ❌ Error:', data.error);
+              this.statusText = 'Error - Reloading...';
+              this.statusClass = '';
+              this.showStatusIndicator = true;
+              this.currentMessageId = null;
+              setTimeout(() => {
+                window.location.reload();
+              }, window.VCConstants.ERROR_RELOAD_DELAY);
+            }
+          } catch (err) {
+            console.error('[Visual Claude] Failed to parse message:', err);
+            if (this.isProcessing) {
+              setTimeout(() => window.location.reload(), 1000);
+            }
+          }
+        };
+
+        this.messageWs.onerror = (error) => {
+          console.error('[Visual Claude] Message WebSocket error:', error);
+          if (this.isProcessing) {
+            setTimeout(() => window.location.reload(), window.VCConstants.ERROR_RELOAD_DELAY);
+          }
+        };
+
+        this.messageWs.onclose = () => {
+          console.log('[Visual Claude] Message WebSocket closed');
+          if (this.isProcessing) {
+            setTimeout(() => window.location.reload(), window.VCConstants.ERROR_RELOAD_DELAY);
+          }
+        };
+      },
+
+      // ============================================================================
+      // COMPUTED PROPERTIES
+      // ============================================================================
+
+      get modeIcon() {
+        return this.isEditMode
+          ? 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z'
+          : 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z';
+      },
+
+      get modeTitle() {
+        return this.isEditMode
+          ? 'Edit Mode - Click to switch to View Mode'
+          : 'View Mode - Click to switch to Edit Mode';
+      },
+
+      get modeClass() {
+        return this.isEditMode ? 'vc-edit-mode' : 'vc-view-mode';
+      }
+    };
   };
 
-  // Create UI elements with CSS custom properties
-  const styles = `
-    :root {
-      --vc-primary: #3b82f6;
-      --vc-primary-hover: #2563eb;
-      --vc-success: #22c55e;
-      --vc-danger: #ef4444;
-      --vc-gray-50: #f9fafb;
-      --vc-gray-100: #f3f4f6;
-      --vc-gray-200: #e5e7eb;
-      --vc-gray-400: #9ca3af;
-      --vc-gray-600: #6b7280;
-      --vc-gray-700: #374151;
-      --vc-gray-900: #1f2937;
-    }
+  console.log('[Visual Claude] Component defined ✓');
 
-    .vc-element-highlight {
-      outline: 2px solid var(--vc-primary) !important;
-      outline-offset: 2px !important;
-      transition: outline 0.15s ease !important;
-    }
+  // ============================================================================
+  // CREATE UI STRUCTURE WITH ALPINE DIRECTIVES
+  // ============================================================================
 
-    @keyframes vc-dash {
-      to {
-        stroke-dashoffset: -100;
-      }
-    }
+  // Create app container
+  const app = document.createElement('div');
+  app.setAttribute('x-data', 'visualClaude()');
+  app.setAttribute('x-init', 'init()');
 
-    .vc-selection-rect {
-      position: fixed;
-      border: 2px dashed var(--vc-primary);
-      background: rgba(59, 130, 246, 0.08);
-      border-radius: 8px;
-      pointer-events: none;
-      z-index: 999999;
-      display: none;
-      box-shadow:
-        0 0 0 1px rgba(59, 130, 246, 0.2),
-        0 10px 30px rgba(59, 130, 246, 0.15);
-      animation: vc-dash 20s linear infinite;
-      stroke-dasharray: 10 5;
-      transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+  // Selection Rectangle
+  app.innerHTML += `
+    <div x-show="showSelectionRect"
+         x-bind:style="selectionRectStyle"
+         class="vc-selection-rect vc-show">
+    </div>
+  `;
 
-    .vc-selection-rect.vc-show {
-      display: block;
-      animation: vc-fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+  // Selection Info Tooltip
+  app.innerHTML += `
+    <div x-show="showSelectionInfo"
+         x-bind:style="selectionInfoStyle"
+         x-text="selectionInfoText"
+         class="vc-selection-info vc-show">
+    </div>
+  `;
 
-    @keyframes vc-fadeIn {
-      from {
-        opacity: 0;
-        transform: scale(0.95);
-      }
-      to {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
+  // Inline Input Modal
+  app.innerHTML += `
+    <div x-show="showInlineInput"
+         x-bind:style="inlineInputStyle"
+         class="vc-inline-input vc-show bg-white border-[2.5px] border-[#333] rounded-lg p-3 fixed z-[1000000] min-w-[300px] max-w-[400px]">
+      <div x-text="inlineInputBadge"
+           class="text-xs font-semibold text-[#333] mb-2 font-sans"></div>
+      <textarea x-model="inlineInputText"
+                @keydown.enter.prevent="!$event.shiftKey && sendInlineMessage()"
+                @keydown.escape.prevent="hideInlineInput()"
+                rows="2"
+                placeholder="What would you like Visual Claude to do?"
+                class="w-full p-2.5 border-2 border-[#333] rounded-md text-sm font-sans leading-snug resize-none focus:outline-none focus:border-[#333]"></textarea>
+      <div class="flex gap-2 mt-2 justify-end">
+        <button @click="hideInlineInput()"
+                class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-200 ease font-sans bg-gray-200 text-[#333] border-[2.5px] border-[#333] hover:opacity-85 active:scale-95">
+          Cancel
+        </button>
+        <button @click="sendInlineMessage()"
+                class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-200 ease font-sans bg-[#F19E38] text-black border-[2.5px] border-[#333] hover:opacity-85 active:scale-95">
+          Send
+        </button>
+      </div>
+    </div>
+  `;
 
-    .vc-selection-info {
-      position: fixed;
-      background: rgba(59, 130, 246, 0.95);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      color: white;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-weight: 500;
-      pointer-events: none;
-      z-index: 1000000;
-      display: none;
-      box-shadow:
-        0 4px 12px rgba(59, 130, 246, 0.3),
-        0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+  // Text Editor Modal
+  app.innerHTML += `
+    <div x-show="showTextEditor"
+         x-bind:style="textEditorStyle"
+         class="vc-text-editor vc-show bg-white border-[2.5px] border-[#333] rounded-lg p-3.5 fixed z-[1000002] min-w-[320px] max-w-[500px] shadow-lg">
+      <div x-text="textEditorLabel"
+           class="text-[11px] font-semibold text-[#666] mb-2 font-sans uppercase tracking-wide"></div>
+      <textarea x-model="textEditorValue"
+                @keydown.enter.meta.prevent="saveTextEdit()"
+                @keydown.enter.ctrl.prevent="saveTextEdit()"
+                @keydown.escape.prevent="hideTextEditor()"
+                rows="3"
+                placeholder="Enter new text..."
+                class="w-full p-2.5 px-3 border-2 border-[#333] rounded-md text-sm font-sans leading-normal resize-y min-h-[70px] box-border focus:outline-none focus:border-[#F19E38] focus:shadow-[0_0_0_3px_rgba(241,158,56,0.1)]"></textarea>
+      <div x-text="textEditorPreview"
+           class="text-[11px] text-[#666] mt-2 p-2 px-2.5 bg-gray-50 rounded font-mono max-h-20 overflow-y-auto break-words"></div>
+      <div class="flex gap-2 mt-2.5 justify-end">
+        <button @click="hideTextEditor()"
+                class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-200 ease font-sans bg-gray-200 text-[#333] border-[2.5px] border-[#333] hover:opacity-85 active:scale-95">
+          Cancel
+        </button>
+        <button @click="saveTextEdit()"
+                class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-200 ease font-sans bg-[#F19E38] text-black border-[2.5px] border-[#333] hover:opacity-85 active:scale-95">
+          Save
+        </button>
+      </div>
+    </div>
+  `;
 
-    .vc-selection-info.vc-show {
-      display: block;
-      animation: vc-tooltipIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
+  // Status Indicator
+  app.innerHTML += `
+    <div x-show="showStatusIndicator"
+         x-bind:class="statusClass"
+         x-html="statusText"
+         x-transition
+         class="vc-status-indicator fixed bottom-6 left-6 px-5 py-3 rounded-lg bg-white text-gray-900 border-[2.5px] border-[#333] text-sm font-semibold font-sans z-[1000000] flex items-center gap-2 shadow-lg transition-all duration-200 ease">
+    </div>
+  `;
 
-    @keyframes vc-tooltipIn {
-      from {
-        opacity: 0;
-        transform: scale(0.85) translateY(-5px);
-      }
-      to {
-        opacity: 1;
-        transform: scale(1) translateY(0);
-      }
-    }
+  // Mode Toggle Toolbar
+  app.innerHTML += `
+    <div class="vc-mode-toolbar fixed bottom-6 right-6 z-[1000003]">
+      <button @click="toggleMode()"
+              x-bind:class="modeClass"
+              x-bind:title="modeTitle"
+              class="vc-mode-toggle flex items-center justify-center w-12 h-12 border-[2.5px] border-[#333] rounded-full outline-none transition-all duration-200 ease cursor-pointer shadow-lg hover:scale-110 hover:shadow-xl active:scale-100">
+        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path x-bind:d="modeIcon"></path>
+        </svg>
+      </button>
+    </div>
+  `;
 
-    .vc-inline-input {
-      position: fixed;
-      background: white;
-      border: 2.5px solid #333333;
-      border-radius: 8px;
-      padding: 12px;
-      z-index: 1000000;
-      display: none;
-      min-width: 300px;
-      max-width: 400px;
-    }
-
-    .vc-inline-input.vc-show {
-      display: block;
-      animation: vc-fadeIn 0.2s ease;
-    }
-
-    .vc-inline-badge {
-      font-size: 11px;
-      font-weight: 600;
-      color: #333333;
-      margin-bottom: 8px;
-      font-family: system-ui, -apple-system, sans-serif;
-    }
-
-    .vc-inline-text {
-      width: 100%;
-      padding: 10px;
-      border: 2px solid #333333;
-      border-radius: 6px;
-      font-size: 14px;
-      font-family: system-ui, -apple-system, sans-serif;
-      line-height: 1.4;
-      resize: none;
-      transition: none;
-    }
-
-    .vc-inline-text:focus {
-      outline: none;
-      border-color: #333333;
-    }
-
-    .vc-inline-text::placeholder {
-      color: var(--vc-gray-400);
-    }
-
-    .vc-inline-buttons {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-      justify-content: flex-end;
-    }
-
-    .vc-inline-button {
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: system-ui, -apple-system, sans-serif;
-    }
-
-    .vc-inline-button:active {
-      transform: scale(0.95);
-    }
-
-    .vc-inline-button-send {
-      background: #F19E38;
-      color: #000000;
-      border: 2.5px solid #333333;
-    }
-
-    .vc-inline-button-send:hover {
-      opacity: 0.85;
-    }
-
-    .vc-inline-button-cancel {
-      background: var(--vc-gray-200);
-      color: #333333;
-      border: 2.5px solid #333333;
-    }
-
-    .vc-inline-button-cancel:hover {
-      opacity: 0.85;
-    }
-
-    .vc-status-indicator {
-      position: fixed;
-      bottom: 24px;
-      left: 24px;
-      padding: 12px 20px;
-      border-radius: 8px;
-      background: white;
-      color: #1f2937;
-      border: 2.5px solid #333333;
-      font-size: 14px;
-      font-weight: 600;
-      font-family: system-ui, -apple-system, sans-serif;
-      z-index: 1000000;
-      display: none;
-      align-items: center;
-      gap: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .vc-status-indicator.vc-show {
-      display: flex;
-      animation: vc-fadeIn 0.2s ease;
-    }
-
+  // Add Tailwind utility classes for status indicator states
+  const style = document.createElement('style');
+  style.textContent = `
     .vc-status-indicator.vc-processing {
-      background: #F19E38;
-      color: #000000;
-      border-color: #333333;
+      background: #F19E38 !important;
+      color: #000000 !important;
+      border-color: #333333 !important;
     }
 
     .vc-status-indicator.vc-complete {
-      background: #22c55e;
-      color: white;
-      border-color: #333333;
-      animation: vc-fadeOut 0.5s ease 2s forwards;
-    }
-
-    @keyframes vc-fadeOut {
-      from {
-        opacity: 1;
-      }
-      to {
-        opacity: 0;
-      }
-    }
-
-    @keyframes vc-spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-
-    .vc-spinner {
-      display: inline-block;
-      width: 15px;
-      height: 15px;
-      border: 2.5px solid currentColor;
-      border-right-color: transparent;
-      border-radius: 50%;
-      animation: vc-spin 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-    }
-
-    /* Text Editor */
-    .vc-text-editor {
-      position: fixed;
-      background: white;
-      border: 2.5px solid #333333;
-      border-radius: 8px;
-      padding: 14px;
-      z-index: 1000002;
-      display: none;
-      min-width: 320px;
-      max-width: 500px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-    }
-
-    .vc-text-editor.vc-show {
-      display: block;
-      animation: vc-fadeIn 0.2s ease;
-    }
-
-    .vc-text-editor-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: #666666;
-      margin-bottom: 8px;
-      font-family: system-ui, -apple-system, sans-serif;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .vc-text-editor-input {
-      width: 100%;
-      padding: 10px 12px;
-      border: 2px solid #333333;
-      border-radius: 6px;
-      font-size: 14px;
-      font-family: inherit;
-      line-height: 1.5;
-      resize: vertical;
-      min-height: 70px;
-      box-sizing: border-box;
-    }
-
-    .vc-text-editor-input:focus {
-      outline: none;
-      border-color: #F19E38;
-      box-shadow: 0 0 0 3px rgba(241, 158, 56, 0.1);
-    }
-
-    .vc-text-editor-buttons {
-      display: flex;
-      gap: 8px;
-      margin-top: 10px;
-      justify-content: flex-end;
-    }
-
-    .vc-text-editor-preview {
-      font-size: 11px;
-      color: #666;
-      margin-top: 8px;
-      padding: 8px 10px;
-      background: #f9fafb;
-      border-radius: 4px;
-      font-family: monospace;
-      max-height: 80px;
-      overflow-y: auto;
-      word-break: break-word;
-    }
-
-    /* Mode Toolbar */
-    .vc-mode-toolbar {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      z-index: 1000003;
-    }
-
-    .vc-mode-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 48px;
-      height: 48px;
-      border: 2.5px solid #333333;
-      border-radius: 50%;
-      outline: none;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-    }
-
-    .vc-mode-toggle:hover {
-      transform: scale(1.1);
-      box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-    }
-
-    .vc-mode-toggle:active {
-      transform: scale(1.0);
+      background: #22c55e !important;
+      color: white !important;
+      border-color: #333333 !important;
+      animation: vc-fadeOut 0.5s ease 2s forwards !important;
     }
 
     .vc-mode-toggle.vc-edit-mode {
@@ -393,1101 +814,11 @@
       background: #e5e7eb;
       color: #4b5563;
     }
-
-    .vc-mode-icon {
-      width: 20px;
-      height: 20px;
-      fill: currentColor;
-    }
-
-    /* Hide VC UI elements in View Mode */
-    body[data-vc-mode="view"] .vc-element-highlight,
-    body[data-vc-mode="view"] .vc-selection-rect,
-    body[data-vc-mode="view"] .vc-selection-info,
-    body[data-vc-mode="view"] .vc-inline-input,
-    body[data-vc-mode="view"] .vc-text-editor,
-    body[data-vc-mode="view"] .vc-status-indicator {
-      display: none !important;
-    }
-
-    /* Force custom cursor on all elements in Edit Mode */
-    body[data-vc-mode="edit"],
-    body[data-vc-mode="edit"] * {
-      cursor: url('/__visual-claude/cursor.svg') 8 6, auto !important;
-    }
-
-    /* Keep normal cursor for VC UI elements */
-    body[data-vc-mode="edit"] .vc-inline-input,
-    body[data-vc-mode="edit"] .vc-inline-input *,
-    body[data-vc-mode="edit"] .vc-text-editor,
-    body[data-vc-mode="edit"] .vc-text-editor *,
-    body[data-vc-mode="edit"] .vc-mode-toolbar,
-    body[data-vc-mode="edit"] .vc-mode-toolbar * {
-      cursor: auto !important;
-    }
-
-    /* Pointer cursor for VC buttons */
-    body[data-vc-mode="edit"] .vc-inline-button,
-    body[data-vc-mode="edit"] .vc-mode-toggle {
-      cursor: pointer !important;
-    }
-
   `;
+  document.head.appendChild(style);
 
-  // Inject styles
-  const styleSheet = document.createElement('style');
-  styleSheet.textContent = styles;
-  document.head.appendChild(styleSheet);
+  // Append to body
+  document.body.appendChild(app);
 
-  // Create UI
-  const selectionRect = document.createElement('div');
-  selectionRect.className = 'vc-selection-rect';
-  document.body.appendChild(selectionRect);
-
-  const selectionInfo = document.createElement('div');
-  selectionInfo.className = 'vc-selection-info';
-  document.body.appendChild(selectionInfo);
-
-  const inlineInput = document.createElement('div');
-  inlineInput.className = 'vc-inline-input';
-  inlineInput.innerHTML = `
-    <div class="vc-inline-badge"></div>
-    <textarea class="vc-inline-text" rows="2" placeholder="What would you like Visual Claude to do?"></textarea>
-    <div class="vc-inline-buttons">
-      <button class="vc-inline-button vc-inline-button-cancel" data-action="cancel">Cancel</button>
-      <button class="vc-inline-button vc-inline-button-send" data-action="send">Send</button>
-    </div>
-  `;
-  document.body.appendChild(inlineInput);
-
-  const textEditor = document.createElement('div');
-  textEditor.className = 'vc-text-editor';
-  textEditor.innerHTML = `
-    <div class="vc-text-editor-label">Edit text content</div>
-    <textarea class="vc-text-editor-input" rows="3" placeholder="Enter new text..."></textarea>
-    <div class="vc-text-editor-preview"></div>
-    <div class="vc-text-editor-buttons">
-      <button class="vc-inline-button vc-inline-button-cancel" data-action="cancel-edit">Cancel</button>
-      <button class="vc-inline-button vc-inline-button-send" data-action="save-edit">Save</button>
-    </div>
-  `;
-  document.body.appendChild(textEditor);
-
-  const statusIndicator = document.createElement('div');
-  statusIndicator.className = 'vc-status-indicator';
-  statusIndicator.innerHTML = '<span class="vc-spinner"></span>Processing...';
-  document.body.appendChild(statusIndicator);
-
-  const modeToolbar = document.createElement('div');
-  modeToolbar.className = 'vc-mode-toolbar';
-  modeToolbar.innerHTML = `
-    <button class="vc-mode-toggle vc-edit-mode" data-action="toggle-mode" title="Edit Mode">
-      <svg class="vc-mode-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-      </svg>
-    </button>
-  `;
-  document.body.appendChild(modeToolbar);
-
-  // Custom cursor URL (will be applied in Edit mode)
-  const cursorURL = '/__visual-claude/cursor.svg';
-
-  // Get elements within bounds
-  function getElementsInBounds(bounds) {
-    const elements = [];
-    const allElements = document.querySelectorAll('body *');
-
-    allElements.forEach(el => {
-      // Skip our own UI elements
-      if (el.closest('.vc-selection-rect, .vc-selection-info, .vc-inline-input, .vc-status-indicator, .vc-text-editor, .vc-mode-toolbar')) {
-        return;
-      }
-
-      const rect = el.getBoundingClientRect();
-
-      // Check if element intersects with selection (more forgiving than full containment)
-      if (rect.left < bounds.right &&
-          rect.right > bounds.left &&
-          rect.top < bounds.bottom &&
-          rect.bottom > bounds.top) {
-        elements.push(el);
-      }
-    });
-
-    return elements;
-  }
-
-  // Get element info
-  function getElementInfo(element) {
-    // Handle both string className (HTML) and SVGAnimatedString (SVG)
-    let classes = '';
-    if (element.className) {
-      classes = typeof element.className === 'string'
-        ? element.className
-        : element.className.baseVal || '';
-    }
-
-    return {
-      tagName: element.tagName,
-      id: element.id || '',
-      classes: classes,
-      selector: getSelector(element),
-      innerText: element.innerText || '',
-      outerHTML: element.outerHTML || '',
-    };
-  }
-
-  // Get CSS selector for an element
-  function getSelector(element) {
-    if (element.id) {
-      return `#${element.id}`;
-    }
-
-    const path = [];
-    while (element && element.nodeType === Node.ELEMENT_NODE) {
-      let selector = element.nodeName.toLowerCase();
-
-      if (element.className) {
-        // Handle both string className (HTML) and SVGAnimatedString (SVG)
-        const classNameStr = typeof element.className === 'string'
-          ? element.className
-          : element.className.baseVal || '';
-        const classes = classNameStr.trim().split(/\s+/).filter(c => !c.startsWith('vc-'));
-        if (classes.length > 0) {
-          selector += '.' + classes[0];
-        }
-      }
-
-      path.unshift(selector);
-      if (path.length > 3) break; // Limit depth
-      element = element.parentElement;
-    }
-
-    return path.join(' > ');
-  }
-
-  // Capture screenshot of selected area
-  async function captureAreaScreenshot(bounds) {
-    try {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-
-      canvas.width = bounds.width;
-      canvas.height = bounds.height;
-
-      // Use html2canvas if available, otherwise use basic approach
-      if (window.html2canvas) {
-        const fullCanvas = await html2canvas(document.body, {
-          x: bounds.left + window.scrollX,
-          y: bounds.top + window.scrollY,
-          width: bounds.width,
-          height: bounds.height,
-        });
-        return fullCanvas.toDataURL('image/png').split(',')[1];
-      } else {
-        // Fallback: create a placeholder
-        ctx.fillStyle = '#f0f0f0';
-        ctx.fillRect(0, 0, bounds.width, bounds.height);
-        ctx.fillStyle = '#666';
-        ctx.font = '14px system-ui';
-        ctx.textAlign = 'center';
-        ctx.fillText('Screenshot area', bounds.width / 2, bounds.height / 2);
-        return canvas.toDataURL('image/png').split(',')[1];
-      }
-    } catch (err) {
-      console.error('Screenshot capture failed:', err);
-      return '';
-    }
-  }
-
-  // Show inline input with selection info
-  function showInlineInput(cursorX, cursorY, bounds, elements) {
-    selectedElements = elements;
-
-    const areaSize = `${Math.round(bounds.width)}×${Math.round(bounds.height)}px`;
-    const elementCount = elements.length;
-
-    console.log('[Visual Claude] Selection complete:', {
-      area: areaSize,
-      elementCount: elementCount,
-      elements: elements.map(el => el.tagName)
-    });
-
-    // Update badge
-    inlineInput.querySelector('.vc-inline-badge').textContent =
-      `${elementCount} element${elementCount !== 1 ? 's' : ''} · ${areaSize}`;
-
-    // Clear and focus input
-    const textArea = inlineInput.querySelector('.vc-inline-text');
-    textArea.value = '';
-
-    // Position near cursor with smart boundaries
-    const inputWidth = 320;
-    const inputHeight = 140;
-    const padding = 20;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    let left = cursorX + padding;
-    let top = cursorY + padding;
-
-    // Keep within viewport bounds
-    if (left + inputWidth > viewportWidth - padding) {
-      left = cursorX - inputWidth - padding;
-    }
-    if (top + inputHeight > viewportHeight - padding) {
-      top = cursorY - inputHeight - padding;
-    }
-
-    // Ensure minimum distance from edges
-    left = Math.max(padding, Math.min(left, viewportWidth - inputWidth - padding));
-    top = Math.max(padding, Math.min(top, viewportHeight - inputHeight - padding));
-
-    inlineInput.style.left = left + 'px';
-    inlineInput.style.top = top + 'px';
-    inlineInput.classList.add('vc-show');
-
-    // Focus after a small delay to ensure visibility
-    setTimeout(() => textArea.focus(), 100);
-  }
-
-  // Hide inline input
-  function hideInlineInput() {
-    inlineInput.classList.remove('vc-show');
-    selectedElements = [];
-  }
-
-  // Send message to Claude
-  async function sendMessage(instruction) {
-    if (!selectedElements.length || !instruction.trim()) {
-      console.warn('[Visual Claude] Cannot send: no elements or instruction');
-      return;
-    }
-
-    const bounds = {
-      left: Math.min(dragStart.x, dragEnd.x),
-      top: Math.min(dragStart.y, dragEnd.y),
-      width: Math.abs(dragEnd.x - dragStart.x),
-      height: Math.abs(dragEnd.y - dragStart.y),
-    };
-
-    const screenshot = await captureAreaScreenshot(bounds);
-    const elementsInfo = selectedElements.map(el => getElementInfo(el));
-
-    // Generate unique message ID for tracking
-    const messageId = ++messageIdCounter;
-    currentMessageId = messageId;
-    console.log('[Visual Claude] 🆔 Generated new message ID:', messageId);
-
-    const message = {
-      id: messageId,
-      area: {
-        x: bounds.left,
-        y: bounds.top,
-        width: bounds.width,
-        height: bounds.height,
-        elementCount: elementsInfo.length,
-        elements: elementsInfo,
-      },
-      instruction: instruction.trim(),
-      screenshot: screenshot,
-    };
-
-    console.log('[Visual Claude] Preparing to send message:', {
-      instruction: instruction.trim(),
-      elementCount: elementsInfo.length,
-      areaSize: `${bounds.width}x${bounds.height}`,
-      screenshotSize: screenshot ? screenshot.length : 0
-    });
-
-    if (messageWs && messageWs.readyState === WebSocket.OPEN) {
-      console.log('[Visual Claude] WebSocket state: OPEN, sending...');
-
-      // Show processing status immediately (clear any previous status)
-      setStatus('processing');
-
-      messageWs.send(JSON.stringify(message));
-      console.log('[Visual Claude] ✓ Message sent to server');
-    } else {
-      console.error('[Visual Claude] ✗ WebSocket not connected, state:', messageWs ? messageWs.readyState : 'null');
-    }
-
-    hideInlineInput();
-  }
-
-  // Update status indicator
-  function setStatus(status) {
-    statusIndicator.classList.remove('vc-processing', 'vc-complete');
-
-    if (status === 'processing') {
-      statusIndicator.innerHTML = '<span class="vc-spinner"></span>Processing...';
-      statusIndicator.classList.add('vc-show', 'vc-processing');
-      isProcessing = true;
-
-      // Set timeout in case completion message is never received
-      if (processingTimeout) {
-        clearTimeout(processingTimeout);
-      }
-      processingTimeout = setTimeout(() => {
-        console.warn('[Visual Claude] ⚠️  Processing timeout - forcing reload');
-        window.location.reload();
-      }, PROCESSING_TIMEOUT);
-
-    } else if (status === 'complete') {
-      // Clear processing timeout
-      if (processingTimeout) {
-        clearTimeout(processingTimeout);
-        processingTimeout = null;
-      }
-
-      statusIndicator.innerHTML = 'Done ✓';
-      statusIndicator.classList.add('vc-show', 'vc-complete');
-      isProcessing = false;
-
-      // Auto-reload after completion to ensure fresh page state
-      console.log('[Visual Claude] Task completed, reloading in 1.5 seconds...');
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
-
-    } else {
-      // Clear processing timeout
-      if (processingTimeout) {
-        clearTimeout(processingTimeout);
-        processingTimeout = null;
-      }
-
-      statusIndicator.classList.remove('vc-show');
-      isProcessing = false;
-    }
-  }
-
-  // Mode toggle functions
-  function enableEditMode() {
-    isEditMode = true;
-    localStorage.setItem(EDIT_MODE_KEY, 'true');
-
-    // Apply custom cursor
-    document.body.style.cursor = `url('${cursorURL}') 8 6, auto`;
-
-    // Set body attribute for CSS
-    document.body.setAttribute('data-vc-mode', 'edit');
-
-    // Set up event handlers
-    eventHandlers.mousedown = handleMouseDown;
-    eventHandlers.mousemove = (e) => {
-      handleMouseMove(e);
-      handleHoverThrottled(e);
-    };
-    eventHandlers.mouseup = handleMouseUp;
-    eventHandlers.mouseleave = () => {
-      if (currentHoveredElement) {
-        removeElementHighlight();
-      }
-    };
-    eventHandlers.dblclick = handleDoubleClick;
-    eventHandlers.click = handleClick;
-
-    // Add event listeners
-    document.addEventListener('mousedown', eventHandlers.mousedown);
-    document.addEventListener('mousemove', eventHandlers.mousemove);
-    document.addEventListener('mouseup', eventHandlers.mouseup);
-    document.addEventListener('mouseleave', eventHandlers.mouseleave);
-    document.addEventListener('dblclick', eventHandlers.dblclick);
-    document.addEventListener('click', eventHandlers.click, true); // Use capture phase
-
-    // Update toolbar UI
-    updateToolbarUI();
-
-    console.log('[Visual Claude] ✏️  Edit Mode enabled');
-  }
-
-  function disableEditMode() {
-    isEditMode = false;
-    localStorage.setItem(EDIT_MODE_KEY, 'false');
-
-    // Remove custom cursor
-    document.body.style.cursor = '';
-
-    // Set body attribute for CSS
-    document.body.setAttribute('data-vc-mode', 'view');
-
-    // Remove event listeners
-    if (eventHandlers.mousedown) {
-      document.removeEventListener('mousedown', eventHandlers.mousedown);
-      document.removeEventListener('mousemove', eventHandlers.mousemove);
-      document.removeEventListener('mouseup', eventHandlers.mouseup);
-      document.removeEventListener('mouseleave', eventHandlers.mouseleave);
-      document.removeEventListener('dblclick', eventHandlers.dblclick);
-      document.removeEventListener('click', eventHandlers.click, true);
-    }
-
-    // Cancel any pending click actions
-    if (clickTimeout) {
-      clearTimeout(clickTimeout);
-      clickTimeout = null;
-    }
-
-    // Cancel any processing timeout
-    if (processingTimeout) {
-      clearTimeout(processingTimeout);
-      processingTimeout = null;
-    }
-
-    // Clean up any active UI elements
-    hideInlineInput();
-    hideTextEditor();
-    removeElementHighlight();
-    selectionRect.classList.remove('vc-show');
-    selectionInfo.classList.remove('vc-show');
-
-    // Reset drag state
-    isDragging = false;
-    dragStart = null;
-    dragEnd = null;
-
-    // Update toolbar UI
-    updateToolbarUI();
-
-    console.log('[Visual Claude] 👁️  View Mode enabled');
-  }
-
-  function updateToolbarUI() {
-    const toggleBtn = modeToolbar.querySelector('.vc-mode-toggle');
-    const modeIcon = toggleBtn.querySelector('.vc-mode-icon path');
-
-    if (isEditMode) {
-      toggleBtn.className = 'vc-mode-toggle vc-edit-mode';
-      toggleBtn.setAttribute('title', 'Edit Mode - Click to switch to View Mode');
-      // Edit icon SVG (pencil)
-      modeIcon.setAttribute('d', 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z');
-    } else {
-      toggleBtn.className = 'vc-mode-toggle vc-view-mode';
-      toggleBtn.setAttribute('title', 'View Mode - Click to switch to Edit Mode');
-      // Eye icon SVG
-      modeIcon.setAttribute('d', 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z');
-    }
-  }
-
-  function toggleMode() {
-    if (isEditMode) {
-      disableEditMode();
-    } else {
-      enableEditMode();
-    }
-  }
-
-  // Text editing functions
-  function isTextEditable(element) {
-    if (!element || !element.innerText) return false;
-
-    const text = element.innerText.trim();
-    if (text.length === 0) return false;
-
-    const tagName = element.tagName.toLowerCase();
-    const editableTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                          'span', 'a', 'button', 'label', 'li', 'td', 'th', 'div'];
-
-    return editableTags.includes(tagName) || element.hasAttribute('contenteditable');
-  }
-
-  function showTextEditor(element) {
-    if (!element) return;
-
-    currentEditingElement = element;
-    removeElementHighlight();
-
-    // Get current text
-    const currentText = element.innerText.trim();
-
-    // Update editor
-    const input = textEditor.querySelector('.vc-text-editor-input');
-    const preview = textEditor.querySelector('.vc-text-editor-preview');
-    const label = textEditor.querySelector('.vc-text-editor-label');
-
-    input.value = currentText;
-    preview.textContent = `Current: "${currentText.substring(0, 100)}${currentText.length > 100 ? '...' : ''}"`;
-    label.textContent = `Edit ${element.tagName.toLowerCase()} text`;
-
-    // Position near element
-    const rect = element.getBoundingClientRect();
-    const editorWidth = 400;
-    const editorHeight = 200;
-    const padding = 20;
-
-    let left = rect.left;
-    let top = rect.bottom + 10;
-
-    // Keep within viewport
-    if (left + editorWidth > window.innerWidth - padding) {
-      left = window.innerWidth - editorWidth - padding;
-    }
-    if (top + editorHeight > window.innerHeight - padding) {
-      top = rect.top - editorHeight - 10;
-    }
-
-    left = Math.max(padding, left);
-    top = Math.max(padding, top);
-
-    textEditor.style.left = left + 'px';
-    textEditor.style.top = top + 'px';
-    textEditor.classList.add('vc-show');
-
-    // Focus input
-    setTimeout(() => {
-      input.focus();
-      input.select();
-    }, 100);
-  }
-
-  function hideTextEditor() {
-    textEditor.classList.remove('vc-show');
-    currentEditingElement = null;
-  }
-
-  async function saveTextEdit() {
-    if (!currentEditingElement) return;
-
-    const input = textEditor.querySelector('.vc-text-editor-input');
-    const newText = input.value.trim();
-    const oldText = currentEditingElement.innerText.trim();
-
-    if (!newText || newText === oldText) {
-      hideTextEditor();
-      return;
-    }
-
-    // Format instruction for Claude Code
-    const elementInfo = getElementInfo(currentEditingElement);
-    const instruction = `Change the text content from "${oldText}" to "${newText}"`;
-
-    // Generate message ID
-    const messageId = ++messageIdCounter;
-    currentMessageId = messageId;
-    console.log('[Visual Claude] 🆔 Generated new message ID:', messageId);
-
-    const message = {
-      id: messageId,
-      area: {
-        x: 0,
-        y: 0,
-        width: 0,
-        height: 0,
-        elementCount: 1,
-        elements: [elementInfo],
-      },
-      instruction: instruction,
-      screenshot: '',
-    };
-
-    console.log('[Visual Claude] Sending text edit:', message);
-
-    if (messageWs && messageWs.readyState === WebSocket.OPEN) {
-      setStatus('processing');
-      messageWs.send(JSON.stringify(message));
-      console.log('[Visual Claude] ✓ Text edit sent to server');
-    } else {
-      console.error('[Visual Claude] ✗ WebSocket not connected');
-    }
-
-    hideTextEditor();
-  }
-
-  // Click handler - prevent default actions in Edit Mode
-  function handleClick(e) {
-    // Skip if clicking on VC UI elements
-    if (e.target.closest('.vc-inline-input, .vc-status-indicator, .vc-text-editor, .vc-mode-toolbar')) return;
-
-    // Prevent default behavior for links and buttons in Edit Mode
-    if (e.target.tagName === 'A' || e.target.closest('a')) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
-    // Prevent form submissions
-    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.closest('button')) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  }
-
-  // Double-click handler for text editing
-  function handleDoubleClick(e) {
-    // Skip if clicking on VC UI elements
-    if (e.target.closest('.vc-inline-input, .vc-status-indicator, .vc-text-editor, .vc-mode-toolbar')) return;
-
-    // Skip if processing
-    if (isProcessing) return;
-
-    // Cancel any pending single-click action
-    if (clickTimeout) {
-      clearTimeout(clickTimeout);
-      clickTimeout = null;
-    }
-
-    // Prevent default behavior (especially for links)
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Find the text-editable element (check target and closest anchor)
-    let element = e.target;
-
-    // If double-clicking on a link, use the link element
-    const linkElement = element.closest('a');
-    if (linkElement && isTextEditable(linkElement)) {
-      element = linkElement;
-    }
-
-    if (isTextEditable(element)) {
-      showTextEditor(element);
-    }
-  }
-
-  // Mouse down handler - start drag
-  function handleMouseDown(e) {
-    // Skip if clicking on VC UI elements
-    if (e.target.closest('.vc-inline-input, .vc-status-indicator, .vc-text-editor, .vc-mode-toolbar')) return;
-    // Skip if processing
-    if (isProcessing) return;
-
-    // Close text editor if open
-    if (textEditor.classList.contains('vc-show')) {
-      hideTextEditor();
-    }
-
-    // Check WebSocket connection state
-    if (!messageWs || messageWs.readyState !== WebSocket.OPEN) {
-      console.warn('[Visual Claude] WebSocket not ready - state:',
-        messageWs ? messageWs.readyState : 'null',
-        '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
-    }
-
-    // Clear hover highlight when starting drag
-    if (currentHoveredElement) {
-      removeElementHighlight();
-    }
-
-    isDragging = true;
-    dragStart = { x: e.clientX, y: e.clientY };
-    dragEnd = { x: e.clientX, y: e.clientY };
-    dragStartTime = Date.now();
-  }
-
-  // Mouse move handler - update drag
-  function handleMouseMove(e) {
-    if (isDragging) {
-      dragEnd = { x: e.clientX, y: e.clientY };
-
-      // Only show selection rect if moved more than 10px
-      const distance = Math.sqrt(
-        Math.pow(dragEnd.x - dragStart.x, 2) +
-        Math.pow(dragEnd.y - dragStart.y, 2)
-      );
-
-      if (distance > 10) {
-        selectionRect.classList.add('vc-show');
-        updateSelectionRect();
-        updateSelectionInfo();
-      }
-    }
-  }
-
-  // Mouse up handler - complete drag
-  function handleMouseUp(e) {
-    if (!isDragging) return;
-
-    const dragDuration = Date.now() - dragStartTime;
-    const distance = Math.sqrt(
-      Math.pow(dragEnd.x - dragStart.x, 2) +
-      Math.pow(dragEnd.y - dragStart.y, 2)
-    );
-
-    isDragging = false;
-    selectionRect.classList.remove('vc-show');
-    selectionInfo.classList.remove('vc-show');
-
-    // If it's a single click (small movement and short duration), select the clicked element
-    if (distance < 5 && dragDuration < 200) {
-      console.log('[Visual Claude] Single click detected, delaying to check for double-click');
-
-      // Cancel any existing timeout
-      if (clickTimeout) {
-        clearTimeout(clickTimeout);
-      }
-
-      // Delay single-click action to distinguish from double-click
-      clickTimeout = setTimeout(() => {
-        console.log('[Visual Claude] Processing single click');
-
-        // Find the element that was clicked
-        const clickedElement = findElementUnderCursor(e.target);
-
-        if (!clickedElement) {
-          console.log('[Visual Claude] No valid element found at click position');
-          return;
-        }
-
-        // Get element bounds for the selection
-        const rect = clickedElement.getBoundingClientRect();
-        const bounds = {
-          left: rect.left,
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom,
-          width: rect.width,
-          height: rect.height,
-        };
-
-        // Show inline input for single element
-        showInlineInput(e.clientX, e.clientY, bounds, [clickedElement]);
-        clickTimeout = null;
-      }, 250); // Wait 250ms to distinguish from double-click
-
-      return;
-    }
-
-    // Calculate bounds for drag selection
-    const bounds = {
-      left: Math.min(dragStart.x, dragEnd.x),
-      top: Math.min(dragStart.y, dragEnd.y),
-      right: Math.max(dragStart.x, dragEnd.x),
-      bottom: Math.max(dragStart.y, dragEnd.y),
-      width: Math.abs(dragEnd.x - dragStart.x),
-      height: Math.abs(dragEnd.y - dragStart.y),
-    };
-
-    // Minimum selection size (10x10px)
-    if (bounds.width < 10 || bounds.height < 10) {
-      console.log('[Visual Claude] Selection rejected - too small:', {
-        width: bounds.width,
-        height: bounds.height,
-        minRequired: '10x10px'
-      });
-      return;
-    }
-
-    // Get elements in selection
-    const elements = getElementsInBounds(bounds);
-
-    if (elements.length === 0) {
-      console.log('[Visual Claude] Selection rejected - no elements found:', {
-        bounds: bounds,
-        totalElements: document.querySelectorAll('body *').length
-      });
-      return;
-    }
-
-    console.log('[Visual Claude] Selection successful:', {
-      elements: elements.length,
-      bounds: `${bounds.width}x${bounds.height}px`
-    });
-
-    // Show inline input near cursor
-    showInlineInput(e.clientX, e.clientY, bounds, elements);
-  }
-
-  // Update selection rectangle
-  function updateSelectionRect() {
-    const left = Math.min(dragStart.x, dragEnd.x);
-    const top = Math.min(dragStart.y, dragEnd.y);
-    const width = Math.abs(dragEnd.x - dragStart.x);
-    const height = Math.abs(dragEnd.y - dragStart.y);
-
-    selectionRect.style.left = left + 'px';
-    selectionRect.style.top = top + 'px';
-    selectionRect.style.width = width + 'px';
-    selectionRect.style.height = height + 'px';
-  }
-
-  // Update selection info tooltip
-  function updateSelectionInfo() {
-    const width = Math.abs(dragEnd.x - dragStart.x);
-    const height = Math.abs(dragEnd.y - dragStart.y);
-
-    selectionInfo.textContent = `${Math.round(width)} × ${Math.round(height)}`;
-    selectionInfo.style.left = (dragEnd.x + 10) + 'px';
-    selectionInfo.style.top = (dragEnd.y + 10) + 'px';
-    selectionInfo.classList.add('vc-show');
-  }
-
-  // Hover highlighting functions
-  function findElementUnderCursor(target) {
-    let element = target;
-    let depth = 0;
-    const maxDepth = 3;
-
-    while (element && depth < maxDepth) {
-      // Skip if it's a Visual Claude UI element
-      if (element.closest('.vc-selection-rect, .vc-selection-info, .vc-inline-input, .vc-status-indicator, .vc-text-editor, .vc-mode-toolbar')) {
-        return null;
-      }
-
-      // Check if element is valid and visible
-      if (element.nodeType === Node.ELEMENT_NODE && element.offsetParent !== null) {
-        const rect = element.getBoundingClientRect();
-        if (rect.width > 5 && rect.height > 5) {
-          return element;
-        }
-      }
-
-      element = element.parentElement;
-      depth++;
-    }
-
-    return null;
-  }
-
-  function applyElementHighlight(element) {
-    if (!element) return;
-
-    element.classList.add('vc-element-highlight');
-    currentHoveredElement = element;
-
-    // Show element info in tooltip
-    const tagName = element.tagName.toLowerCase();
-    const id = element.id ? `#${element.id}` : '';
-    const classes = Array.from(element.classList)
-      .filter(c => !c.startsWith('vc-'))
-      .slice(0, 2)
-      .join('.');
-    const classStr = classes ? `.${classes}` : '';
-
-    const label = `${tagName}${id}${classStr}`;
-
-    // Position tooltip near element
-    const rect = element.getBoundingClientRect();
-    selectionInfo.textContent = label;
-    selectionInfo.style.left = (rect.left + 10) + 'px';
-    selectionInfo.style.top = (rect.top - 30) + 'px';
-    selectionInfo.classList.add('vc-show');
-  }
-
-  function removeElementHighlight() {
-    if (currentHoveredElement) {
-      currentHoveredElement.classList.remove('vc-element-highlight');
-      currentHoveredElement = null;
-    }
-    selectionInfo.classList.remove('vc-show');
-  }
-
-  function handleHover(e) {
-    // Skip if dragging
-    if (isDragging) {
-      if (currentHoveredElement) {
-        removeElementHighlight();
-      }
-      return;
-    }
-
-    // Skip if processing or any input is open
-    if (isProcessing || inlineInput.classList.contains('vc-show') || textEditor.classList.contains('vc-show')) {
-      if (currentHoveredElement) {
-        removeElementHighlight();
-      }
-      return;
-    }
-
-    // Find element under cursor
-    const element = findElementUnderCursor(e.target);
-
-    // Update highlight if element changed
-    if (element !== currentHoveredElement) {
-      removeElementHighlight();
-      if (element) {
-        applyElementHighlight(element);
-      }
-    }
-  }
-
-  function handleHoverThrottled(e) {
-    const now = Date.now();
-    if (now - lastHoverCheckTime < HOVER_CHECK_THROTTLE) return;
-    lastHoverCheckTime = now;
-    handleHover(e);
-  }
-
-  // Initialize mode toggle functionality
-  function initializeMode() {
-    // Add toolbar toggle listener
-    modeToolbar.querySelector('[data-action="toggle-mode"]').addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleMode();
-    });
-
-    // Add keyboard shortcut: Cmd/Ctrl + Shift + E
-    document.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'E') {
-        e.preventDefault();
-        toggleMode();
-      }
-    });
-
-    // Check saved mode preference
-    const savedMode = localStorage.getItem(EDIT_MODE_KEY);
-    if (savedMode === 'false') {
-      disableEditMode();
-    } else {
-      enableEditMode(); // Default to Edit Mode
-    }
-  }
-
-  // Inline input event listeners
-  inlineInput.querySelector('[data-action="cancel"]').addEventListener('click', (e) => {
-    e.stopPropagation();
-    hideInlineInput();
-  });
-
-  inlineInput.querySelector('[data-action="send"]').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const instruction = inlineInput.querySelector('.vc-inline-text').value;
-    sendMessage(instruction);
-  });
-
-  // Handle Enter key in textarea (Shift+Enter for new line)
-  inlineInput.querySelector('.vc-inline-text').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      const instruction = e.target.value;
-      sendMessage(instruction);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      hideInlineInput();
-    }
-  });
-
-  // Text editor event listeners
-  textEditor.querySelector('[data-action="cancel-edit"]').addEventListener('click', (e) => {
-    e.stopPropagation();
-    hideTextEditor();
-  });
-
-  textEditor.querySelector('[data-action="save-edit"]').addEventListener('click', (e) => {
-    e.stopPropagation();
-    saveTextEdit();
-  });
-
-  textEditor.querySelector('.vc-text-editor-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      saveTextEdit();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      hideTextEditor();
-    }
-  });
-
-  // WebSocket connections
-  function connectWebSockets() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-
-    // Reload WebSocket
-    reloadWs = new WebSocket(`${protocol}//${host}/__visual-claude/ws/reload`);
-    reloadWs.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'reload') {
-        console.log('[Visual Claude] Reloading page...');
-        window.location.reload();
-      }
-    };
-
-    reloadWs.onerror = (error) => {
-      console.error('[Visual Claude] Reload WebSocket error:', error);
-    };
-
-    reloadWs.onclose = () => {
-      console.log('[Visual Claude] Reload WebSocket closed, reconnecting...');
-      setTimeout(connectWebSockets, 2000);
-    };
-
-    // Message WebSocket
-    messageWs = new WebSocket(`${protocol}//${host}/__visual-claude/ws/message`);
-    messageWs.onopen = () => {
-      console.log('[Visual Claude] Connected to Claude Code');
-    };
-
-    messageWs.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('[Visual Claude] Message from server:', data, 'currentMessageId:', currentMessageId);
-
-        // Check if this message is for the current request
-        if (data.id && data.id !== currentMessageId) {
-          console.warn('[Visual Claude] ⚠️  Ignoring stale message - received ID:', data.id, 'current:', currentMessageId, 'status:', data.status);
-          return;
-        }
-
-        // Safety check: if we don't have a current message ID but receive a completion, ignore it
-        if (!currentMessageId && (data.status === 'complete' || data.status === 'error')) {
-          console.warn('[Visual Claude] ⚠️  Ignoring completion message with no active request');
-          return;
-        }
-
-        // Listen for completion status
-        if (data.status === 'received') {
-          // Message was received by server (already showing "Processing...")
-          console.log('[Visual Claude] ✅ Server acknowledged receipt of message ID:', data.id);
-        } else if (data.status === 'complete') {
-          // Claude finished processing
-          console.log('[Visual Claude] 🎉 Task completed successfully for message ID:', data.id);
-          console.log('[Visual Claude] 🎯 About to call setStatus("complete")');
-          setStatus('complete');
-          console.log('[Visual Claude] 🧹 Clearing currentMessageId (was:', currentMessageId, ')');
-          currentMessageId = null; // Clear current message ID
-        } else if (data.status === 'error') {
-          // Error occurred
-          console.log('[Visual Claude] ❌ Error occurred for message ID:', data.id, 'Error:', data.error);
-          console.error('[Visual Claude] Error details:', data.error);
-          // Show error and reload after a delay
-          statusIndicator.innerHTML = 'Error - Reloading...';
-          statusIndicator.classList.add('vc-show');
-          statusIndicator.style.background = '#ef4444';
-          statusIndicator.style.color = 'white';
-          currentMessageId = null; // Clear current message ID
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
-        } else {
-          console.warn('[Visual Claude] ⚠️  Unknown status received:', data.status);
-        }
-      } catch (err) {
-        console.error('[Visual Claude] Failed to parse server message:', err);
-        // If we can't parse the message and we're processing, assume error
-        if (isProcessing) {
-          console.error('[Visual Claude] Parse error during processing, reloading...');
-          setTimeout(() => {
-            window.location.reload();
-          }, 1000);
-        }
-      }
-    };
-
-    messageWs.onerror = (error) => {
-      console.error('[Visual Claude] Message WebSocket error:', error);
-      // If we're processing and WebSocket errors, reload after delay
-      if (isProcessing) {
-        console.error('[Visual Claude] WebSocket error during processing, reloading...');
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      }
-    };
-
-    messageWs.onclose = () => {
-      console.log('[Visual Claude] Message WebSocket closed');
-      // If we're processing and WebSocket closes unexpectedly, reload
-      if (isProcessing) {
-        console.warn('[Visual Claude] WebSocket closed during processing, reloading...');
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      }
-    };
-  }
-
-  // Initialize
-  initializeMode();
-  connectWebSockets();
-  console.log('[Visual Claude] Initialized ✓');
-  console.log('[Visual Claude] Toggle between Edit and View modes using the toolbar (bottom-right corner)');
+  console.log('[Visual Claude] UI created ✓');
 })();

@@ -1,0 +1,159 @@
+/* Visual Claude Styles - Tailwind CSS + Custom Styles */
+
+/* CSS Custom Properties for theming */
+:root {
+  --vc-primary: #3b82f6;
+  --vc-primary-hover: #2563eb;
+  --vc-success: #22c55e;
+  --vc-danger: #ef4444;
+  --vc-orange: #F19E38;
+  --vc-gray-50: #f9fafb;
+  --vc-gray-100: #f3f4f6;
+  --vc-gray-200: #e5e7eb;
+  --vc-gray-400: #9ca3af;
+  --vc-gray-600: #6b7280;
+  --vc-gray-700: #374151;
+  --vc-gray-900: #1f2937;
+  --vc-black: #333333;
+}
+
+/* Element Hover Highlight */
+.vc-element-highlight {
+  outline: 2px solid var(--vc-primary) !important;
+  outline-offset: 2px !important;
+  transition: outline 0.15s ease !important;
+}
+
+/* Animations */
+@keyframes vc-dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+@keyframes vc-fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes vc-tooltipIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes vc-fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Selection Rectangle */
+.vc-selection-rect {
+  position: fixed;
+  border: 2px dashed var(--vc-primary);
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 999999;
+  display: none;
+  box-shadow:
+    0 0 0 1px rgba(59, 130, 246, 0.2),
+    0 10px 30px rgba(59, 130, 246, 0.15);
+  animation: vc-dash 20s linear infinite;
+  stroke-dasharray: 10 5;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vc-selection-rect.vc-show {
+  display: block;
+  animation: vc-fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Selection Info Tooltip */
+.vc-selection-info {
+  position: fixed;
+  background: rgba(59, 130, 246, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 1000000;
+  display: none;
+  box-shadow:
+    0 4px 12px rgba(59, 130, 246, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vc-selection-info.vc-show {
+  display: block;
+  animation: vc-tooltipIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Spinner */
+.vc-spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: vc-spin 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Hide VC UI elements in View Mode */
+body[data-vc-mode="view"] .vc-element-highlight,
+body[data-vc-mode="view"] .vc-selection-rect,
+body[data-vc-mode="view"] .vc-selection-info,
+body[data-vc-mode="view"] .vc-inline-input,
+body[data-vc-mode="view"] .vc-text-editor,
+body[data-vc-mode="view"] .vc-status-indicator {
+  display: none !important;
+}
+
+/* Force custom cursor on all elements in Edit Mode */
+body[data-vc-mode="edit"],
+body[data-vc-mode="edit"] * {
+  cursor: url('/__visual-claude/cursor.svg') 8 6, auto !important;
+}
+
+/* Keep normal cursor for VC UI elements */
+body[data-vc-mode="edit"] .vc-inline-input,
+body[data-vc-mode="edit"] .vc-inline-input *,
+body[data-vc-mode="edit"] .vc-text-editor,
+body[data-vc-mode="edit"] .vc-text-editor *,
+body[data-vc-mode="edit"] .vc-mode-toolbar,
+body[data-vc-mode="edit"] .vc-mode-toolbar * {
+  cursor: auto !important;
+}
+
+/* Pointer cursor for VC buttons */
+body[data-vc-mode="edit"] .vc-inline-button,
+body[data-vc-mode="edit"] .vc-mode-toggle {
+  cursor: pointer !important;
+}
