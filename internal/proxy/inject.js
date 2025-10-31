@@ -92,9 +92,24 @@
         insertBefore: true,
         originalIndex: -1,
         newIndex: -1,
+        draggedElementWidth: 0,
+        draggedElementHeight: 0,
       },
       showReorderPlaceholder: false,
       reorderPlaceholderStyle: '',
+
+      // Action Menu State (NEW)
+      showActionMenu: false,
+      actionMenuStyle: '',
+      actionMenuElement: null,
+
+      // Change History State (Phase 2)
+      showHistoryPanel: false,
+      changeHistory: [], // Array of change objects
+      nextChangeId: 1,
+      historyIndex: -1, // For undo/redo (-1 means at latest)
+      undoStack: [],
+      redoStack: [],
 
       // ============================================================================
       // INITIALIZATION
@@ -116,11 +131,30 @@
         // Connect WebSockets
         this.connectWebSockets();
 
-        // Keyboard shortcut: Cmd/Ctrl + Shift + E
+        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
+          // Cmd/Ctrl + Shift + E: Toggle mode
           if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'E') {
             e.preventDefault();
             this.toggleMode();
+          }
+
+          // Cmd/Ctrl + Shift + H: Toggle history panel
+          if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'H') {
+            e.preventDefault();
+            this.toggleHistoryPanel();
+          }
+
+          // Cmd/Ctrl + Z: Undo
+          if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'z') {
+            e.preventDefault();
+            this.undo();
+          }
+
+          // Cmd/Ctrl + Shift + Z: Redo
+          if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'z') {
+            e.preventDefault();
+            this.redo();
           }
         });
 
@@ -274,25 +308,25 @@
             const clickedElement = window.VCUtils.findElementUnderCursor(e.target);
 
             if (!clickedElement) {
-              console.log('[Visual Claude] No valid element found');
+              console.log('[Visual Claude] No valid element found - deselecting');
+              // Clicked on empty space - deselect current selection
+              if (this.selectedElement) {
+                this.deselectElement();
+              }
+              return;
+            }
+
+            // Clicking on the same element that's already selected - do nothing (keep menu open)
+            if (clickedElement === this.selectedElement) {
+              console.log('[Visual Claude] Same element clicked - maintaining selection');
               return;
             }
 
             // Select element for visual editing
             this.selectElementForEditing(clickedElement);
 
-            // Also show inline input for instructions
-            const rect = clickedElement.getBoundingClientRect();
-            const bounds = {
-              left: rect.left,
-              top: rect.top,
-              right: rect.right,
-              bottom: rect.bottom,
-              width: rect.width,
-              height: rect.height,
-            };
-
-            this.openInlineInput(e.clientX, e.clientY, bounds, [clickedElement]);
+            // Show action menu above the selected element
+            this.showActionMenuForElement(clickedElement);
             this.clickTimeout = null;
           }, window.VCConstants.CLICK_DOUBLE_CLICK_DELAY);
 
@@ -382,6 +416,9 @@
           if (this.showDesignModal) {
             this.closeDesignModal();
           }
+          if (this.showActionMenu) {
+            this.hideActionMenu();
+          }
 
           // Deselect any selected element
           if (this.selectedElement) {
@@ -406,6 +443,23 @@
           }
 
           console.log('[Visual Claude] Escape pressed - all selections cancelled');
+        }
+
+        // Action menu keyboard shortcuts (when action menu is visible)
+        if (this.showActionMenu) {
+          if (e.key === 'e' || e.key === 'E') {
+            e.preventDefault();
+            this.actionMenuEdit();
+          } else if (e.key === 'm' || e.key === 'M') {
+            e.preventDefault();
+            this.actionMenuMove();
+          } else if (e.key === 'r' || e.key === 'R') {
+            e.preventDefault();
+            this.actionMenuResize();
+          } else if (e.key === 'a' || e.key === 'A') {
+            e.preventDefault();
+            this.actionMenuAI();
+          }
         }
       },
 
@@ -545,33 +599,29 @@
         const bounds = window.VCUtils.calculateBounds(this.dragStart, this.dragEnd);
         const screenshot = await window.VCUtils.captureAreaScreenshot(bounds);
         const elementsInfo = this.selectedElements.map(el => window.VCUtils.getElementInfo(el));
+        const instruction = this.inlineInputText.trim();
 
-        const messageId = ++this.messageIdCounter;
-        this.currentMessageId = messageId;
-
-        const message = {
-          id: messageId,
-          area: {
+        // Add to history instead of sending immediately
+        const changeData = {
+          instruction: instruction,
+          screenshot: screenshot,
+          bounds: {
             x: bounds.left,
             y: bounds.top,
             width: bounds.width,
             height: bounds.height,
-            elementCount: elementsInfo.length,
-            elements: elementsInfo,
           },
-          instruction: this.inlineInputText.trim(),
-          screenshot: screenshot,
+          elements: elementsInfo,
+          elementCount: elementsInfo.length,
         };
 
-        console.log('[Visual Claude] Sending message:', messageId);
+        // Use first element for tracking or create a synthetic selector
+        const targetElement = this.selectedElements[0];
+        const preview = `"${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`;
 
-        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
-          this.setStatus('processing');
-          this.messageWs.send(JSON.stringify(message));
-          console.log('[Visual Claude] ✓ Message sent');
-        } else {
-          console.error('[Visual Claude] ✗ WebSocket not connected');
-        }
+        this.addToHistory('ai', targetElement, changeData, preview);
+
+        console.log('[Visual Claude] AI instruction added to history');
 
         this.hideInlineInput();
       },
@@ -628,35 +678,20 @@
           return;
         }
 
-        const elementInfo = window.VCUtils.getElementInfo(this.currentEditingElement);
-        const instruction = `Change the text content from "${oldText}" to "${newText}"`;
+        // Apply change to DOM immediately for instant feedback
+        this.currentEditingElement.innerText = newText;
 
-        const messageId = ++this.messageIdCounter;
-        this.currentMessageId = messageId;
-
-        const message = {
-          id: messageId,
-          area: {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0,
-            elementCount: 1,
-            elements: [elementInfo],
-          },
-          instruction: instruction,
-          screenshot: '',
+        // Add to history (user will commit via history panel)
+        const changeData = {
+          oldText: oldText,
+          newText: newText,
+          originalInnerText: oldText,
         };
 
-        console.log('[Visual Claude] Sending text edit:', messageId);
+        const preview = `"${oldText.substring(0, 30)}${oldText.length > 30 ? '...' : ''}" → "${newText.substring(0, 30)}${newText.length > 30 ? '...' : ''}"`;
+        this.addToHistory('text', this.currentEditingElement, changeData, preview);
 
-        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
-          this.setStatus('processing');
-          this.messageWs.send(JSON.stringify(message));
-          console.log('[Visual Claude] ✓ Text edit sent');
-        } else {
-          console.error('[Visual Claude] ✗ WebSocket not connected');
-        }
+        console.log('[Visual Claude] Text change applied and added to history');
 
         this.hideTextEditor();
       },
@@ -810,10 +845,16 @@
             if (this.showResizeHandles && this.selectedElement) {
               this.updateResizeHandlesPosition();
             }
+            if (this.showActionMenu && this.actionMenuElement) {
+              this.updateActionMenuPosition();
+            }
           };
           this._resizeListener = () => {
             if (this.showResizeHandles && this.selectedElement) {
               this.updateResizeHandlesPosition();
+            }
+            if (this.showActionMenu && this.actionMenuElement) {
+              this.updateActionMenuPosition();
             }
           };
           window.addEventListener('scroll', this._scrollListener, true);
@@ -829,6 +870,8 @@
           this.selectedElement = null;
         }
         this.showResizeHandles = false;
+        this.showActionMenu = false;
+        this.actionMenuElement = null;
 
         // Clean up listeners
         if (this._scrollListener) {
@@ -836,6 +879,493 @@
           window.removeEventListener('resize', this._resizeListener);
           this._scrollListener = null;
           this._resizeListener = null;
+        }
+      },
+
+      // ============================================================================
+      // ACTION MENU - Contextual menu for selected elements
+      // ============================================================================
+
+      showActionMenuForElement(element) {
+        if (!element) return;
+
+        this.actionMenuElement = element;
+        this.showActionMenu = true;
+        this.updateActionMenuPosition();
+
+        console.log('[Visual Claude] Action menu shown for element');
+      },
+
+      hideActionMenu() {
+        this.showActionMenu = false;
+        this.actionMenuElement = null;
+      },
+
+      updateActionMenuPosition() {
+        if (!this.actionMenuElement) {
+          this.showActionMenu = false;
+          return;
+        }
+
+        const rect = this.actionMenuElement.getBoundingClientRect();
+
+        // Position menu above element, centered
+        const menuWidth = 400; // Approximate width of 4 buttons
+        const menuHeight = 50;
+        let left = rect.left + (rect.width / 2) - (menuWidth / 2);
+        let top = rect.top - menuHeight - 10;
+
+        // Keep within viewport bounds
+        const padding = 20;
+        if (left < padding) left = padding;
+        if (left + menuWidth > window.innerWidth - padding) {
+          left = window.innerWidth - menuWidth - padding;
+        }
+        if (top < padding) {
+          // Show below element if not enough space above
+          top = rect.bottom + 10;
+        }
+
+        this.actionMenuStyle = `left: ${left}px; top: ${top}px;`;
+      },
+
+      actionMenuEdit() {
+        console.log('[Visual Claude] Action: Edit text');
+        if (!this.actionMenuElement) return;
+
+        // Check if element is text-editable
+        if (window.VCUtils.isTextEditable(this.actionMenuElement)) {
+          this.hideActionMenu();
+          this.openTextEditor(this.actionMenuElement);
+        } else {
+          console.warn('[Visual Claude] Element is not text-editable');
+          // Fall back to AI mode if not text-editable
+          this.actionMenuAI();
+        }
+      },
+
+      actionMenuMove() {
+        console.log('[Visual Claude] Action: Move element');
+        if (!this.actionMenuElement) return;
+
+        this.hideActionMenu();
+
+        // Enable drag mode by programmatically triggering drag start
+        // User can now drag the element
+        // Show a visual indicator that move mode is active
+        const fakeEvent = {
+          clientX: 0,
+          clientY: 0,
+          preventDefault: () => {},
+          stopPropagation: () => {},
+        };
+
+        // Start drag with the selected element
+        this.startDrag(fakeEvent, 'move');
+
+        // Show a hint to the user
+        console.log('[Visual Claude] Move mode activated - drag the element');
+      },
+
+      actionMenuResize() {
+        console.log('[Visual Claude] Action: Resize element');
+        if (!this.actionMenuElement) return;
+
+        this.hideActionMenu();
+
+        // Just hide the action menu and keep resize handles visible
+        // User can now use the resize handles
+        console.log('[Visual Claude] Resize mode activated - use the handles');
+      },
+
+      actionMenuAI() {
+        console.log('[Visual Claude] Action: AI instructions');
+        if (!this.actionMenuElement) return;
+
+        this.hideActionMenu();
+
+        // Open inline input for AI instructions
+        const rect = this.actionMenuElement.getBoundingClientRect();
+        const bounds = {
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height,
+        };
+
+        this.openInlineInput(rect.right, rect.top, bounds, [this.actionMenuElement]);
+      },
+
+      // ============================================================================
+      // CHANGE HISTORY MANAGEMENT (Phase 2)
+      // ============================================================================
+
+      toggleHistoryPanel() {
+        this.showHistoryPanel = !this.showHistoryPanel;
+        console.log('[Visual Claude] History panel:', this.showHistoryPanel ? 'shown' : 'hidden');
+      },
+
+      addToHistory(type, element, data, preview) {
+        const change = {
+          id: this.nextChangeId++,
+          type: type, // 'transform', 'reorder', 'text'
+          element: element,
+          selector: window.VCUtils.getSelector(element),
+          timestamp: Date.now(),
+          selected: true, // Default to selected
+          data: data,
+          preview: preview,
+        };
+
+        this.changeHistory.push(change);
+        this.undoStack.push(change);
+        this.redoStack = []; // Clear redo stack when new change is made
+
+        console.log('[Visual Claude] Added to history:', change);
+        return change;
+      },
+
+      removeFromHistory(changeId) {
+        const index = this.changeHistory.findIndex(c => c.id === changeId);
+        if (index !== -1) {
+          this.changeHistory.splice(index, 1);
+          console.log('[Visual Claude] Removed from history:', changeId);
+        }
+      },
+
+      clearHistory() {
+        this.changeHistory = [];
+        this.undoStack = [];
+        this.redoStack = [];
+        this.nextChangeId = 1;
+        console.log('[Visual Claude] History cleared');
+      },
+
+      toggleChangeSelection(changeId) {
+        const change = this.changeHistory.find(c => c.id === changeId);
+        if (change) {
+          change.selected = !change.selected;
+        }
+      },
+
+      selectAllChanges() {
+        this.changeHistory.forEach(c => c.selected = true);
+      },
+
+      deselectAllChanges() {
+        this.changeHistory.forEach(c => c.selected = false);
+      },
+
+      getSelectedChanges() {
+        return this.changeHistory.filter(c => c.selected);
+      },
+
+      undo() {
+        if (this.undoStack.length === 0) {
+          console.log('[Visual Claude] Nothing to undo');
+          return;
+        }
+
+        const change = this.undoStack.pop();
+        this.redoStack.push(change);
+
+        // Remove from pendingChanges if it exists
+        this.pendingChanges.delete(change.selector);
+
+        // Remove from changeHistory
+        this.removeFromHistory(change.id);
+
+        // Revert the DOM change
+        this.revertChange(change);
+
+        console.log('[Visual Claude] Undo:', change);
+      },
+
+      redo() {
+        if (this.redoStack.length === 0) {
+          console.log('[Visual Claude] Nothing to redo');
+          return;
+        }
+
+        const change = this.redoStack.pop();
+        this.undoStack.push(change);
+
+        // Re-add to changeHistory
+        this.changeHistory.push(change);
+
+        // Re-apply the change
+        this.reapplyChange(change);
+
+        console.log('[Visual Claude] Redo:', change);
+      },
+
+      revertChange(change) {
+        // Find the element and revert its changes
+        const element = document.querySelector(change.selector);
+        if (!element) {
+          console.warn('[Visual Claude] Element not found for revert:', change.selector);
+          return;
+        }
+
+        if (change.type === 'transform') {
+          // Revert transform/resize
+          element.style.transform = '';
+          element.style.width = '';
+          element.style.height = '';
+        } else if (change.type === 'reorder') {
+          // Revert reorder - move back to original position
+          // This is complex, for now just log
+          console.log('[Visual Claude] Reorder revert not yet implemented');
+        } else if (change.type === 'text') {
+          // Revert text change
+          if (change.data.oldText !== undefined) {
+            element.innerText = change.data.oldText;
+          }
+        } else if (change.type === 'ai') {
+          // AI changes can't be reverted in frontend
+          // User would need to undo the Claude Code changes
+          console.log('[Visual Claude] AI instruction changes cannot be reverted in frontend');
+        }
+      },
+
+      reapplyChange(change) {
+        // Find the element and re-apply changes
+        const element = document.querySelector(change.selector);
+        if (!element) {
+          console.warn('[Visual Claude] Element not found for reapply:', change.selector);
+          return;
+        }
+
+        if (change.type === 'transform') {
+          // Re-apply transform/resize
+          if (change.data.styles) {
+            element.style.transform = change.data.styles.transform || '';
+            element.style.width = change.data.styles.width || '';
+            element.style.height = change.data.styles.height || '';
+          }
+        } else if (change.type === 'reorder') {
+          // Re-apply reorder
+          console.log('[Visual Claude] Reorder reapply not yet implemented');
+        } else if (change.type === 'text') {
+          // Re-apply text change
+          if (change.data.newText !== undefined) {
+            element.innerText = change.data.newText;
+          }
+        } else if (change.type === 'ai') {
+          // AI changes can't be re-applied in frontend
+          // Will be sent to Claude Code on next commit
+          console.log('[Visual Claude] AI instruction will be sent on commit');
+        }
+
+        // Re-add to pendingChanges (skip for AI - no pending frontend changes)
+        if (change.type !== 'ai') {
+          this.pendingChanges.set(change.selector, {
+            operation: change.type,
+            ...change.data
+          });
+        }
+      },
+
+      formatTimestamp(timestamp) {
+        const now = Date.now();
+        const diff = now - timestamp;
+        const seconds = Math.floor(diff / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+
+        if (seconds < 60) return 'Just now';
+        if (minutes < 60) return `${minutes}m ago`;
+        if (hours < 24) return `${hours}h ago`;
+        return new Date(timestamp).toLocaleDateString();
+      },
+
+      getChangeTypeBadge(type) {
+        const badges = {
+          transform: { text: 'Move/Resize', color: '#3b82f6' },
+          reorder: { text: 'Reorder', color: '#8b5cf6' },
+          text: { text: 'Text Edit', color: '#10b981' },
+          ai: { text: 'AI Instruction', color: '#f59e0b' },
+        };
+        return badges[type] || { text: type, color: '#6b7280' };
+      },
+
+      // Phase 3: Token Estimation
+      estimateTokens(change) {
+        // Rough estimate: 4 characters ≈ 1 token
+        let totalChars = 0;
+
+        // Selector
+        totalChars += change.selector.length;
+
+        // Data
+        totalChars += JSON.stringify(change.data).length;
+
+        // Instructions overhead
+        totalChars += 200; // Base instruction text
+
+        return Math.ceil(totalChars / 4);
+      },
+
+      estimateTotalTokens(changes) {
+        let total = 500; // Base overhead for prompt structure
+        changes.forEach(change => {
+          total += this.estimateTokens(change);
+        });
+        return total;
+      },
+
+      // Phase 3: Intelligent Batching
+      groupChangesByType(changes) {
+        const groups = {
+          transform: [],
+          reorder: [],
+          text: [],
+          ai: [],
+        };
+
+        changes.forEach(change => {
+          if (groups[change.type]) {
+            groups[change.type].push(change);
+          }
+        });
+
+        return groups;
+      },
+
+      createBatches(changes, maxTokens = 6000) {
+        const batches = [];
+        let currentBatch = [];
+        let currentTokens = 0;
+
+        // Group by type first for better context
+        const grouped = this.groupChangesByType(changes);
+        const sortedChanges = [
+          ...grouped.text,      // Text edits first
+          ...grouped.ai,        // AI instructions second
+          ...grouped.transform, // Transforms third
+          ...grouped.reorder,   // Reorders last
+        ];
+
+        for (const change of sortedChanges) {
+          const tokens = this.estimateTokens(change);
+
+          if (currentTokens + tokens > maxTokens && currentBatch.length > 0) {
+            // Start new batch
+            batches.push(currentBatch);
+            currentBatch = [change];
+            currentTokens = tokens;
+          } else {
+            currentBatch.push(change);
+            currentTokens += tokens;
+          }
+        }
+
+        // Add final batch
+        if (currentBatch.length > 0) {
+          batches.push(currentBatch);
+        }
+
+        return batches;
+      },
+
+      commitSelectedChanges() {
+        const selected = this.getSelectedChanges();
+        if (selected.length === 0) {
+          console.warn('[Visual Claude] No changes selected');
+          return;
+        }
+
+        console.log('[Visual Claude] Committing', selected.length, 'selected changes');
+        this.commitChanges(selected);
+      },
+
+      commitAllChanges() {
+        if (this.changeHistory.length === 0) {
+          console.warn('[Visual Claude] No changes to commit');
+          return;
+        }
+
+        console.log('[Visual Claude] Committing all', this.changeHistory.length, 'changes');
+        this.commitChanges(this.changeHistory);
+      },
+
+      async commitChanges(changes) {
+        // Estimate tokens
+        const totalTokens = this.estimateTotalTokens(changes);
+        console.log('[Visual Claude] Total estimated tokens:', totalTokens);
+
+        // Check if we need to batch
+        if (totalTokens > 6000) {
+          console.log('[Visual Claude] Creating batches...');
+          const batches = this.createBatches(changes, 6000);
+          console.log('[Visual Claude] Split into', batches.length, 'batches');
+
+          // Process batches sequentially
+          for (let i = 0; i < batches.length; i++) {
+            console.log(`[Visual Claude] Processing batch ${i + 1}/${batches.length}...`);
+            await this.sendBatchToBackend(batches[i], i + 1, batches.length);
+          }
+        } else {
+          // Send all changes in one batch
+          await this.sendBatchToBackend(changes, 1, 1);
+        }
+
+        // Clear history after successful commit
+        this.clearHistory();
+        this.pendingChanges.clear();
+
+        // Close history panel
+        this.showHistoryPanel = false;
+      },
+
+      async sendBatchToBackend(changes, batchNumber, totalBatches) {
+        // Convert changes to the format expected by backend
+        const changesForBackend = changes.map(change => {
+          const changeData = {
+            selector: change.selector,
+            operation: change.type || 'transform',
+          };
+
+          if (change.type === 'reorder' && change.data.reorderData) {
+            changeData.reorderData = change.data.reorderData;
+          } else if (change.type === 'transform' && change.data.styles) {
+            changeData.styles = change.data.styles;
+          } else if (change.type === 'text' && change.data) {
+            changeData.oldText = change.data.oldText;
+            changeData.newText = change.data.newText;
+          } else if (change.type === 'ai' && change.data) {
+            changeData.instruction = change.data.instruction;
+            changeData.screenshot = change.data.screenshot;
+            changeData.bounds = change.data.bounds;
+            changeData.elements = change.data.elements;
+            changeData.elementCount = change.data.elementCount;
+          }
+
+          return changeData;
+        });
+
+        const message = {
+          type: 'visual-edits',
+          changes: changesForBackend,
+          batch: {
+            number: batchNumber,
+            total: totalBatches,
+          },
+        };
+
+        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
+          this.setStatus('processing');
+          this.messageWs.send(JSON.stringify(message));
+          console.log(`[Visual Claude] ✓ Batch ${batchNumber}/${totalBatches} sent`);
+
+          // Wait for processing before sending next batch
+          if (batchNumber < totalBatches) {
+            await new Promise(resolve => setTimeout(resolve, 2000)); // 2s delay between batches
+          }
+        } else {
+          console.error('[Visual Claude] ✗ WebSocket not connected');
         }
       },
 
@@ -855,8 +1385,9 @@
         e.preventDefault();
         e.stopPropagation();
 
-        // Hide hover drag handle when starting to drag
+        // Hide hover drag handle and action menu when starting to drag
         this.showHoverDragHandle = false;
+        this.showActionMenu = false;
 
         const rect = this.selectedElement.getBoundingClientRect();
 
@@ -875,6 +1406,10 @@
           // Detect layout context for potential reordering
           this.reorderMode.layoutContext = window.VCUtils.detectLayoutContext(this.selectedElement);
           this.reorderMode.siblingArrangement = window.VCUtils.getSiblingArrangement(this.selectedElement);
+
+          // Store dragged element dimensions for placeholder
+          this.reorderMode.draggedElementWidth = rect.width;
+          this.reorderMode.draggedElementHeight = rect.height;
 
           if (this.reorderMode.siblingArrangement) {
             // Store original index
@@ -1004,13 +1539,22 @@
         const rect = targetElement.getBoundingClientRect();
         const isVertical = this.reorderMode.siblingArrangement.isVertical;
 
+        // Get dragged element dimensions
+        const draggedWidth = this.reorderMode.draggedElementWidth;
+        const draggedHeight = this.reorderMode.draggedElementHeight;
+
+        // Get layout gap for proper spacing
+        const gap = this.reorderMode.layoutContext.gap || 0;
+
         let placeholderStyle = '';
         if (isVertical) {
-          const y = insertBefore ? rect.top : rect.bottom;
-          placeholderStyle = `left: ${rect.left}px; top: ${y - 2}px; width: ${rect.width}px; height: 4px;`;
+          // Show slot above or below target
+          const y = insertBefore ? rect.top - gap : rect.bottom + gap;
+          placeholderStyle = `left: ${rect.left}px; top: ${y}px; width: ${draggedWidth}px; height: ${draggedHeight}px;`;
         } else {
-          const x = insertBefore ? rect.left : rect.right;
-          placeholderStyle = `left: ${x - 2}px; top: ${rect.top}px; width: 4px; height: ${rect.height}px;`;
+          // Show slot left or right of target
+          const x = insertBefore ? rect.left - gap : rect.right + gap;
+          placeholderStyle = `left: ${x}px; top: ${rect.top}px; width: ${draggedWidth}px; height: ${draggedHeight}px;`;
         }
 
         this.reorderPlaceholderStyle = placeholderStyle;
@@ -1132,6 +1676,10 @@
           this.pendingChanges.set(selector, change);
           console.log('[Visual Claude] Stored reorder operation:', selector, change);
 
+          // Add to history
+          const preview = `Reordered from position ${this.reorderMode.originalIndex} to ${change.reorderData.toIndex}`;
+          this.addToHistory('reorder', this.selectedElement, change, preview);
+
           // Actually reorder in DOM for immediate visual feedback
           const parent = this.reorderMode.layoutContext.parent;
           if (this.reorderMode.insertBefore) {
@@ -1165,6 +1713,12 @@
 
           this.pendingChanges.set(selector, change);
           console.log('[Visual Claude] Stored transform/resize:', selector, change);
+
+          // Add to history
+          const preview = change.styles.transform ?
+            `Moved element` :
+            `Resized to ${change.styles.width} × ${change.styles.height}`;
+          this.addToHistory('transform', this.selectedElement, change, preview);
         }
 
         // Reset drag state
@@ -1441,14 +1995,13 @@
     </div>
   `;
 
-  // Reorder Placeholder Line
+  // Reorder Placeholder Slot - Shows where element will be dropped
   app.innerHTML += `
     <div x-show="showReorderPlaceholder"
          x-bind:style="reorderPlaceholderStyle"
          class="vc-reorder-placeholder fixed z-[1000001] pointer-events-none">
-      <div class="vc-placeholder-line bg-[#3b82f6] rounded-full shadow-lg relative">
-        <div class="absolute inset-0 bg-[#3b82f6] opacity-30 blur-sm"></div>
-        <div class="absolute inset-0 bg-[#3b82f6]"></div>
+      <div class="vc-placeholder-slot">
+        <div class="vc-placeholder-label">Drop here</div>
       </div>
     </div>
   `;
@@ -1677,6 +2230,42 @@
     </div>
   `;
 
+  // Action Menu (NEW) - Contextual menu for selected elements
+  app.innerHTML += `
+    <div x-show="showActionMenu"
+         x-bind:style="actionMenuStyle"
+         class="vc-action-menu"
+         x-bind:class="{'vc-show': showActionMenu}">
+      <!-- Edit Text Button -->
+      <button @click="actionMenuEdit()"
+              class="vc-action-menu-btn">
+        <span class="vc-action-menu-icon">✏️</span>
+        <span class="vc-action-menu-label">Edit</span>
+      </button>
+
+      <!-- Move Button -->
+      <button @click="actionMenuMove()"
+              class="vc-action-menu-btn">
+        <span class="vc-action-menu-icon">↔️</span>
+        <span class="vc-action-menu-label">Move</span>
+      </button>
+
+      <!-- Resize Button -->
+      <button @click="actionMenuResize()"
+              class="vc-action-menu-btn">
+        <span class="vc-action-menu-icon">⊡</span>
+        <span class="vc-action-menu-label">Resize</span>
+      </button>
+
+      <!-- AI Instructions Button -->
+      <button @click="actionMenuAI()"
+              class="vc-action-menu-btn">
+        <span class="vc-action-menu-icon">🎨</span>
+        <span class="vc-action-menu-label">AI</span>
+      </button>
+    </div>
+  `;
+
   // Visual Edit Toolbar (Apply/Discard) - shows when there are pending changes
   app.innerHTML += `
     <div x-show="pendingChangesCount > 0"
@@ -1709,6 +2298,24 @@
       <!-- Divider -->
       <div class="w-[2.5px] h-8 bg-[#333]"></div>
 
+      <!-- History Panel Button -->
+      <button @click="toggleHistoryPanel()"
+              x-bind:class="{'bg-[#F19E38] text-black': showHistoryPanel, 'bg-transparent text-[#333]': !showHistoryPanel}"
+              title="Change History (Cmd+Shift+H)"
+              class="flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 active:scale-95 relative">
+        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
+        </svg>
+        <!-- Change count badge -->
+        <span x-show="changeHistory.length > 0"
+              x-text="changeHistory.length"
+              class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white">
+        </span>
+      </button>
+
+      <!-- Divider -->
+      <div class="w-[2.5px] h-8 bg-[#333]"></div>
+
       <!-- Edit/View Mode Toggle Button -->
       <button @click="toggleMode()"
               x-bind:class="modeClass"
@@ -1718,6 +2325,145 @@
           <path x-bind:d="modeIcon"></path>
         </svg>
       </button>
+    </div>
+  `;
+
+  // History Panel Sidebar (Phase 2)
+  app.innerHTML += `
+    <div x-show="showHistoryPanel"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="-translate-x-full"
+         x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="translate-x-0"
+         x-transition:leave-end="-translate-x-full"
+         class="vc-history-panel fixed left-0 top-0 bottom-0 w-96 bg-white border-r-[2.5px] border-[#333] shadow-2xl z-[1000004] overflow-hidden flex flex-col">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between p-4 border-b-[2.5px] border-[#333] bg-gray-50">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
+          </svg>
+          <h2 class="text-lg font-bold text-[#333]">Change History</h2>
+          <span x-show="changeHistory.length > 0"
+                x-text="changeHistory.length"
+                class="bg-[#F19E38] text-black text-xs font-bold px-2 py-0.5 rounded-full">
+          </span>
+        </div>
+        <button @click="toggleHistoryPanel()"
+                class="text-gray-600 hover:text-black cursor-pointer transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Actions Bar -->
+      <div class="flex items-center gap-2 p-3 border-b-[2.5px] border-[#333] bg-gray-50">
+        <button @click="selectAllChanges()"
+                class="text-xs font-semibold px-3 py-1.5 bg-white border-[2.5px] border-[#333] rounded cursor-pointer hover:bg-gray-100 active:scale-95 transition-all">
+          Select All
+        </button>
+        <button @click="deselectAllChanges()"
+                class="text-xs font-semibold px-3 py-1.5 bg-white border-[2.5px] border-[#333] rounded cursor-pointer hover:bg-gray-100 active:scale-95 transition-all">
+          Deselect All
+        </button>
+        <button @click="clearHistory()"
+                class="text-xs font-semibold px-3 py-1.5 bg-red-500 text-white border-[2.5px] border-[#333] rounded cursor-pointer hover:opacity-85 active:scale-95 transition-all ml-auto">
+          Clear All
+        </button>
+      </div>
+
+      <!-- Token Estimate (Phase 3) -->
+      <div x-show="changeHistory.length > 0"
+           class="flex items-center gap-2 p-3 bg-blue-50 border-b-[2.5px] border-[#333]">
+        <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+        </svg>
+        <span class="text-xs text-blue-800">
+          Estimated tokens: <strong x-text="estimateTotalTokens(changeHistory)"></strong>
+          <template x-if="estimateTotalTokens(changeHistory) > 6000">
+            <span class="text-orange-600 font-semibold"> (will batch)</span>
+          </template>
+        </span>
+      </div>
+
+      <!-- Change List -->
+      <div class="flex-1 overflow-y-auto p-3 space-y-2">
+        <!-- Empty State -->
+        <template x-if="changeHistory.length === 0">
+          <div class="flex flex-col items-center justify-center h-full text-center p-8">
+            <svg class="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <p class="text-gray-500 font-medium">No changes yet</p>
+            <p class="text-gray-400 text-sm mt-1">Start editing to see changes here</p>
+          </div>
+        </template>
+
+        <!-- Change Items -->
+        <template x-for="change in changeHistory" :key="change.id">
+          <div class="vc-change-item bg-white border-[2.5px] border-[#333] rounded-lg p-3 hover:shadow-md transition-shadow">
+            <div class="flex items-start gap-3">
+              <!-- Checkbox -->
+              <input type="checkbox"
+                     x-model="change.selected"
+                     class="mt-1 w-4 h-4 cursor-pointer accent-[#F19E38]">
+
+              <!-- Content -->
+              <div class="flex-1 min-w-0">
+                <!-- Type Badge and Timestamp -->
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase"
+                        x-bind:style="'background-color: ' + getChangeTypeBadge(change.type).color + '; color: white;'"
+                        x-text="getChangeTypeBadge(change.type).text">
+                  </span>
+                  <span class="text-xs text-gray-500" x-text="formatTimestamp(change.timestamp)"></span>
+                </div>
+
+                <!-- Element Selector -->
+                <div class="text-xs font-mono text-gray-700 mb-1 truncate" x-text="change.selector"></div>
+
+                <!-- Preview -->
+                <div class="text-sm text-gray-600" x-text="change.preview"></div>
+
+                <!-- Token Estimate -->
+                <div class="text-[10px] text-gray-400 mt-1">
+                  ~<span x-text="estimateTokens(change)"></span> tokens
+                </div>
+              </div>
+
+              <!-- Delete Button -->
+              <button @click="removeFromHistory(change.id)"
+                      class="text-gray-400 hover:text-red-600 cursor-pointer transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Footer Actions -->
+      <div class="border-t-[2.5px] border-[#333] p-4 bg-gray-50 space-y-2">
+        <div class="text-xs text-gray-600 mb-2">
+          <span x-text="getSelectedChanges().length"></span> of <span x-text="changeHistory.length"></span> selected
+        </div>
+        <button @click="commitSelectedChanges()"
+                x-bind:disabled="getSelectedChanges().length === 0"
+                x-bind:class="getSelectedChanges().length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-85 active:scale-95'"
+                class="w-full px-4 py-2.5 bg-green-500 text-white font-bold border-[2.5px] border-[#333] rounded-lg cursor-pointer transition-all">
+          Commit Selected
+        </button>
+        <button @click="commitAllChanges()"
+                x-bind:disabled="changeHistory.length === 0"
+                x-bind:class="changeHistory.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-85 active:scale-95'"
+                class="w-full px-4 py-2.5 bg-[#F19E38] text-black font-bold border-[2.5px] border-[#333] rounded-lg cursor-pointer transition-all">
+          Commit All Changes
+        </button>
+      </div>
     </div>
   `;
 

@@ -51,7 +51,7 @@
     VC_UI_SELECTOR: '.vc-selection-rect, .vc-selection-info, .vc-inline-input, ' +
                    '.vc-status-indicator, .vc-text-editor, .vc-mode-toolbar, .vc-design-modal, ' +
                    '.vc-control-bar, .vc-drag-handles, .vc-visual-toolbar, .vc-hover-drag-handle, ' +
-                   '.vc-reorder-placeholder',
+                   '.vc-reorder-placeholder, .vc-action-menu, .vc-history-panel',
   };
 
   // ============================================================================

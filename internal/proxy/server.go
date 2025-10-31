@@ -278,6 +278,17 @@ func (s *Server) handleApplyVisualEdits(conn *websocket.Conn, data map[string]in
 		return fmt.Errorf("missing or invalid changes array")
 	}
 
+	// Extract batch info if present (Phase 3)
+	var batchNumber, totalBatches int
+	if batchData, ok := data["batch"].(map[string]interface{}); ok {
+		if num, ok := batchData["number"].(float64); ok {
+			batchNumber = int(num)
+		}
+		if total, ok := batchData["total"].(float64); ok {
+			totalBatches = int(total)
+		}
+	}
+
 	// Analyze project context
 	ctx, err := analyzer.AnalyzeProject(s.projectDir)
 	if err != nil {
@@ -298,7 +309,11 @@ func (s *Server) handleApplyVisualEdits(conn *websocket.Conn, data map[string]in
 
 	// Build detailed instruction for Claude
 	var instruction strings.Builder
-	instruction.WriteString("I made the following visual changes to elements:\n\n")
+	if totalBatches > 1 {
+		instruction.WriteString(fmt.Sprintf("BATCH %d of %d: I made the following visual changes to elements:\n\n", batchNumber, totalBatches))
+	} else {
+		instruction.WriteString("I made the following visual changes to elements:\n\n")
+	}
 
 	for i, changeData := range changesData {
 		changeMap, ok := changeData.(map[string]interface{})
@@ -335,6 +350,33 @@ func (s *Server) handleApplyVisualEdits(conn *websocket.Conn, data map[string]in
 				instruction.WriteString(fmt.Sprintf("   - Insert before: %s\n", insertBeforeSelector))
 			} else if insertAfterSelector != "" {
 				instruction.WriteString(fmt.Sprintf("   - Insert after: %s\n", insertAfterSelector))
+			}
+			instruction.WriteString("\n")
+		} else if operation == "text" {
+			// TEXT EDIT OPERATION
+			oldText, _ := changeMap["oldText"].(string)
+			newText, _ := changeMap["newText"].(string)
+
+			instruction.WriteString(fmt.Sprintf("%d. TEXT EDIT: Element '%s'\n", i+1, selector))
+			instruction.WriteString(fmt.Sprintf("   - Old text: \"%s\"\n", oldText))
+			instruction.WriteString(fmt.Sprintf("   - New text: \"%s\"\n", newText))
+			instruction.WriteString("\n")
+		} else if operation == "ai" {
+			// AI INSTRUCTION OPERATION
+			aiInstruction, _ := changeMap["instruction"].(string)
+			boundsData, _ := changeMap["bounds"].(map[string]interface{})
+			elementCount, _ := changeMap["elementCount"].(float64)
+
+			instruction.WriteString(fmt.Sprintf("%d. AI INSTRUCTION: '%s'\n", i+1, aiInstruction))
+			instruction.WriteString(fmt.Sprintf("   - Target: Element '%s'\n", selector))
+			instruction.WriteString(fmt.Sprintf("   - Affected elements: %d\n", int(elementCount)))
+
+			if boundsData != nil {
+				x, _ := boundsData["x"].(float64)
+				y, _ := boundsData["y"].(float64)
+				width, _ := boundsData["width"].(float64)
+				height, _ := boundsData["height"].(float64)
+				instruction.WriteString(fmt.Sprintf("   - Area: (%.0f, %.0f) - %.0f×%.0fpx\n", x, y, width, height))
 			}
 			instruction.WriteString("\n")
 		} else {
@@ -390,6 +432,29 @@ FOR TRANSFORM/RESIZE OPERATIONS:
    - For absolute positioning, ensure parent has position: relative
    - Maintain responsive design - don't break mobile layouts
    - Preserve existing animations or transitions
+
+FOR TEXT EDIT OPERATIONS:
+1. Locate the element in the source code using the selector
+2. Update the text content in the appropriate location:
+   - For React: Update the text content inside JSX elements
+   - For Vue: Update the text content in template
+   - For Svelte: Update the text in the markup
+   - For HTML: Update the text content directly
+3. Preserve all HTML structure and formatting
+4. If text is stored in a variable or prop, update that instead
+5. Keep translations intact if using i18n
+
+FOR AI INSTRUCTION OPERATIONS:
+1. Read and understand the natural language instruction provided
+2. Locate the target element(s) using the selector and area information
+3. Apply the requested changes based on the instruction:
+   - For style changes: Update CSS, Tailwind classes, or inline styles
+   - For content changes: Modify text, add/remove elements as needed
+   - For layout changes: Adjust structure, positioning, or flex/grid properties
+   - For functionality changes: Update event handlers, props, or logic
+4. Use the area bounds and element count as context for the scope of changes
+5. Maintain code quality and follow project conventions
+6. If instruction is ambiguous, make reasonable assumptions based on context
 
 **General Guidelines:**
 - Make changes permanent in the appropriate files
