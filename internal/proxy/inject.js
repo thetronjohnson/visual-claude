@@ -62,13 +62,13 @@
       analysisStep: '', // 'analyzing', 'sending', 'processing', ''
       currentDesignMessageId: null,
 
-      // Visual Edit Mode State
-      isVisualEditMode: false,
-      selectedForVisualEdit: null,
+      // Unified Edit Mode State
+      selectedElement: null, // Currently selected element for visual editing
       pendingChanges: new Map(), // Map<selector, {transform, width, height, originalStyles}>
       dragHandle: {
         isDragging: false,
         isResizing: false,
+        isDraggingFromHandle: false, // True when dragging from the hover handle
         resizeDirection: '', // 'n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'
         startX: 0,
         startY: 0,
@@ -77,8 +77,24 @@
         elementStartWidth: 0,
         elementStartHeight: 0,
       },
-      showDragHandles: false,
-      dragHandlesStyle: '',
+      showResizeHandles: false,
+      resizeHandlesStyle: '',
+      showHoverDragHandle: false,
+      hoverDragHandleStyle: '',
+      hoverDragHandleElement: null,
+
+      // Reorder Mode State
+      reorderMode: {
+        isActive: false,
+        layoutContext: null,
+        siblingArrangement: null,
+        currentTarget: null,
+        insertBefore: true,
+        originalIndex: -1,
+        newIndex: -1,
+      },
+      showReorderPlaceholder: false,
+      reorderPlaceholderStyle: '',
 
       // ============================================================================
       // INITIALIZATION
@@ -121,13 +137,27 @@
         localStorage.setItem(window.VCConstants.EDIT_MODE_KEY, 'true');
         document.body.setAttribute('data-vc-mode', 'edit');
 
+        // Bind handlers and store references for cleanup
+        if (!this._boundHandlers) {
+          this._boundHandlers = {
+            mousedown: this.handleMouseDown.bind(this),
+            mousemove: this.handleMouseMove.bind(this),
+            mouseup: this.handleMouseUp.bind(this),
+            mouseleave: this.handleMouseLeave.bind(this),
+            dblclick: this.handleDoubleClick.bind(this),
+            click: this.handleClick.bind(this),
+            keydown: this.handleEditModeKeyboard.bind(this),
+          };
+        }
+
         // Add event listeners
-        document.addEventListener('mousedown', this.handleMouseDown.bind(this));
-        document.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        document.addEventListener('mouseup', this.handleMouseUp.bind(this));
-        document.addEventListener('mouseleave', this.handleMouseLeave.bind(this));
-        document.addEventListener('dblclick', this.handleDoubleClick.bind(this));
-        document.addEventListener('click', this.handleClick.bind(this), true);
+        document.addEventListener('mousedown', this._boundHandlers.mousedown);
+        document.addEventListener('mousemove', this._boundHandlers.mousemove);
+        document.addEventListener('mouseup', this._boundHandlers.mouseup);
+        document.addEventListener('mouseleave', this._boundHandlers.mouseleave);
+        document.addEventListener('dblclick', this._boundHandlers.dblclick);
+        document.addEventListener('click', this._boundHandlers.click, true);
+        document.addEventListener('keydown', this._boundHandlers.keydown);
 
         console.log('[Visual Claude] ✏️  Edit Mode enabled');
       },
@@ -137,10 +167,22 @@
         localStorage.setItem(window.VCConstants.EDIT_MODE_KEY, 'false');
         document.body.setAttribute('data-vc-mode', 'view');
 
+        // Remove event listeners
+        if (this._boundHandlers) {
+          document.removeEventListener('mousedown', this._boundHandlers.mousedown);
+          document.removeEventListener('mousemove', this._boundHandlers.mousemove);
+          document.removeEventListener('mouseup', this._boundHandlers.mouseup);
+          document.removeEventListener('mouseleave', this._boundHandlers.mouseleave);
+          document.removeEventListener('dblclick', this._boundHandlers.dblclick);
+          document.removeEventListener('click', this._boundHandlers.click, true);
+          document.removeEventListener('keydown', this._boundHandlers.keydown);
+        }
+
         // Clean up
         this.hideInlineInput();
         this.hideTextEditor();
         this.removeElementHighlight();
+        this.deselectElement();
         this.showSelectionRect = false;
         this.showSelectionInfo = false;
         this.isDragging = false;
@@ -236,6 +278,10 @@
               return;
             }
 
+            // Select element for visual editing
+            this.selectElementForEditing(clickedElement);
+
+            // Also show inline input for instructions
             const rect = clickedElement.getBoundingClientRect();
             const bounds = {
               left: rect.left,
@@ -319,6 +365,50 @@
         }
       },
 
+      handleEditModeKeyboard(e) {
+        if (!this.isEditMode) return;
+
+        // Escape key - cancel all selections and close modals
+        if (e.key === 'Escape') {
+          e.preventDefault();
+
+          // Close any open modals/inputs
+          if (this.showInlineInput) {
+            this.hideInlineInput();
+          }
+          if (this.showTextEditor) {
+            this.hideTextEditor();
+          }
+          if (this.showDesignModal) {
+            this.closeDesignModal();
+          }
+
+          // Deselect any selected element
+          if (this.selectedElement) {
+            this.deselectElement();
+          }
+
+          // Remove hover highlight
+          if (this.currentHoveredElement) {
+            this.removeElementHighlight();
+          }
+
+          // Exit reorder mode if active
+          if (this.reorderMode.isActive) {
+            this.exitReorderMode();
+          }
+
+          // Cancel any drag in progress
+          if (this.isDragging) {
+            this.isDragging = false;
+            this.showSelectionRect = false;
+            this.showSelectionInfo = false;
+          }
+
+          console.log('[Visual Claude] Escape pressed - all selections cancelled');
+        }
+      },
+
       // ============================================================================
       // HOVER HIGHLIGHTING
       // ============================================================================
@@ -345,6 +435,11 @@
           return;
         }
 
+        // Check if hovering over the drag handle itself - keep highlight
+        if (e.target.closest('.vc-hover-drag-handle')) {
+          return; // Don't remove highlight when over drag handle
+        }
+
         const element = window.VCUtils.findElementUnderCursor(e.target);
 
         if (element !== this.currentHoveredElement) {
@@ -360,13 +455,23 @@
 
         element.classList.add('vc-element-highlight');
         this.currentHoveredElement = element;
+        this.hoverDragHandleElement = element;
 
         const label = window.VCUtils.getElementLabel(element);
         const rect = element.getBoundingClientRect();
 
+        // Show label tooltip
         this.selectionInfoText = label;
         this.selectionInfoStyle = `left: ${rect.left + 10}px; top: ${rect.top - 30}px;`;
         this.showSelectionInfo = true;
+
+        // Show drag handle on left side (further away to prevent flickering)
+        const handleSize = 24;
+        const handleLeft = rect.left - handleSize - 4; // Closer to element
+        const handleTop = rect.top + (rect.height / 2) - (handleSize / 2);
+
+        this.hoverDragHandleStyle = `left: ${handleLeft}px; top: ${handleTop}px;`;
+        this.showHoverDragHandle = true;
       },
 
       removeElementHighlight() {
@@ -375,6 +480,8 @@
           this.currentHoveredElement = null;
         }
         this.showSelectionInfo = false;
+        this.showHoverDragHandle = false;
+        this.hoverDragHandleElement = null;
       },
 
       // ============================================================================
@@ -680,115 +787,78 @@
       },
 
       // ============================================================================
-      // VISUAL EDIT MODE
+      // UNIFIED EDIT MODE - VISUAL EDITING
       // ============================================================================
 
-      toggleVisualEditMode() {
-        this.isVisualEditMode = !this.isVisualEditMode;
-
-        if (this.isVisualEditMode) {
-          // Disable regular edit mode
-          if (this.isEditMode) {
-            this.disableEditMode();
-          }
-
-          // Enable visual edit mode
-          document.body.setAttribute('data-vc-mode', 'visual-edit');
-          document.addEventListener('click', this.handleVisualEditClick.bind(this), true);
-          document.addEventListener('keydown', this.handleVisualEditKeyboard.bind(this));
-          window.addEventListener('scroll', this.handleVisualEditScroll.bind(this), true);
-          window.addEventListener('resize', this.handleVisualEditResize.bind(this));
-
-          console.log('[Visual Claude] 🖱️  Visual Edit Mode enabled');
-        } else {
-          // Cleanup
-          document.body.setAttribute('data-vc-mode', 'view');
-          document.removeEventListener('click', this.handleVisualEditClick.bind(this), true);
-          document.removeEventListener('keydown', this.handleVisualEditKeyboard.bind(this));
-          window.removeEventListener('scroll', this.handleVisualEditScroll.bind(this), true);
-          window.removeEventListener('resize', this.handleVisualEditResize.bind(this));
-          this.deselectVisualElement();
-
-          console.log('[Visual Claude] Visual Edit Mode disabled');
-        }
-      },
-
-      handleVisualEditClick(e) {
-        // Ignore clicks on Visual Claude UI
-        if (e.target.closest(window.VCConstants.VC_UI_SELECTOR)) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        const element = window.VCUtils.findElementUnderCursor(e.target);
-        if (element) {
-          this.selectElementForVisualEdit(element);
-        }
-      },
-
-      handleVisualEditKeyboard(e) {
-        // Escape key - deselect
-        if (e.key === 'Escape') {
-          this.deselectVisualElement();
-        }
-      },
-
-      handleVisualEditScroll() {
-        // Update drag handles position on scroll
-        if (this.showDragHandles && this.selectedForVisualEdit) {
-          this.updateDragHandlesPosition();
-        }
-      },
-
-      handleVisualEditResize() {
-        // Update drag handles position on window resize
-        if (this.showDragHandles && this.selectedForVisualEdit) {
-          this.updateDragHandlesPosition();
-        }
-      },
-
-      selectElementForVisualEdit(element) {
-        if (!element || element === this.selectedForVisualEdit) return;
+      selectElementForEditing(element) {
+        if (!element || element === this.selectedElement) return;
 
         // Deselect previous
-        this.deselectVisualElement();
+        this.deselectElement();
 
         // Select new element
-        this.selectedForVisualEdit = element;
+        this.selectedElement = element;
         element.classList.add('vc-visual-edit-selected');
 
-        // Show drag handles
-        this.showDragHandles = true;
-        this.updateDragHandlesPosition();
+        // Show resize handles
+        this.showResizeHandles = true;
+        this.updateResizeHandlesPosition();
 
-        console.log('[Visual Claude] Selected for visual edit:', window.VCUtils.getSelector(element));
-      },
-
-      deselectVisualElement() {
-        if (this.selectedForVisualEdit) {
-          this.selectedForVisualEdit.classList.remove('vc-visual-edit-selected');
-          this.selectedForVisualEdit = null;
+        // Add scroll/resize listeners for this selected element
+        if (!this._scrollListener) {
+          this._scrollListener = () => {
+            if (this.showResizeHandles && this.selectedElement) {
+              this.updateResizeHandlesPosition();
+            }
+          };
+          this._resizeListener = () => {
+            if (this.showResizeHandles && this.selectedElement) {
+              this.updateResizeHandlesPosition();
+            }
+          };
+          window.addEventListener('scroll', this._scrollListener, true);
+          window.addEventListener('resize', this._resizeListener);
         }
-        this.showDragHandles = false;
+
+        console.log('[Visual Claude] Selected element:', window.VCUtils.getSelector(element));
       },
 
-      updateDragHandlesPosition() {
-        if (!this.selectedForVisualEdit) {
-          this.showDragHandles = false;
+      deselectElement() {
+        if (this.selectedElement) {
+          this.selectedElement.classList.remove('vc-visual-edit-selected');
+          this.selectedElement = null;
+        }
+        this.showResizeHandles = false;
+
+        // Clean up listeners
+        if (this._scrollListener) {
+          window.removeEventListener('scroll', this._scrollListener, true);
+          window.removeEventListener('resize', this._resizeListener);
+          this._scrollListener = null;
+          this._resizeListener = null;
+        }
+      },
+
+      updateResizeHandlesPosition() {
+        if (!this.selectedElement) {
+          this.showResizeHandles = false;
           return;
         }
 
-        const rect = this.selectedForVisualEdit.getBoundingClientRect();
-        this.dragHandlesStyle = `left: ${rect.left}px; top: ${rect.top}px; width: ${rect.width}px; height: ${rect.height}px;`;
+        const rect = this.selectedElement.getBoundingClientRect();
+        this.resizeHandlesStyle = `left: ${rect.left}px; top: ${rect.top}px; width: ${rect.width}px; height: ${rect.height}px;`;
       },
 
       startDrag(e, direction = 'move') {
-        if (!this.selectedForVisualEdit) return;
+        if (!this.selectedElement) return;
 
         e.preventDefault();
         e.stopPropagation();
 
-        const rect = this.selectedForVisualEdit.getBoundingClientRect();
+        // Hide hover drag handle when starting to drag
+        this.showHoverDragHandle = false;
+
+        const rect = this.selectedElement.getBoundingClientRect();
 
         this.dragHandle.startX = e.clientX;
         this.dragHandle.startY = e.clientY;
@@ -799,7 +869,17 @@
 
         if (direction === 'move') {
           this.dragHandle.isDragging = true;
+          this.dragHandle.isDraggingFromHandle = true;
           document.body.style.cursor = 'move';
+
+          // Detect layout context for potential reordering
+          this.reorderMode.layoutContext = window.VCUtils.detectLayoutContext(this.selectedElement);
+          this.reorderMode.siblingArrangement = window.VCUtils.getSiblingArrangement(this.selectedElement);
+
+          if (this.reorderMode.siblingArrangement) {
+            // Store original index
+            this.reorderMode.originalIndex = this.reorderMode.siblingArrangement.siblings.indexOf(this.selectedElement);
+          }
         } else {
           this.dragHandle.isResizing = true;
           this.dragHandle.resizeDirection = direction;
@@ -810,8 +890,19 @@
         document.addEventListener('mouseup', this.handleDragEnd.bind(this));
       },
 
+      startDragFromHoverHandle(e) {
+        // Start dragging from the hover handle
+        if (!this.hoverDragHandleElement) return;
+
+        // Select the element
+        this.selectElementForEditing(this.hoverDragHandleElement);
+
+        // Start drag immediately
+        this.startDrag(e, 'move');
+      },
+
       handleDragMove(e) {
-        if (!this.selectedForVisualEdit) return;
+        if (!this.selectedElement) return;
         if (!this.dragHandle.isDragging && !this.dragHandle.isResizing) return;
 
         e.preventDefault();
@@ -820,12 +911,66 @@
         const deltaY = e.clientY - this.dragHandle.startY;
 
         if (this.dragHandle.isDragging) {
-          // Apply transform for dragging
-          const newX = deltaX;
-          const newY = deltaY;
+          // Check if we should trigger reorder mode
+          const shouldReorder = window.VCUtils.shouldTriggerReorder(
+            this.selectedElement,
+            deltaX,
+            deltaY,
+            this.reorderMode.layoutContext,
+            this.reorderMode.siblingArrangement
+          );
 
-          this.selectedForVisualEdit.style.transform = `translate(${newX}px, ${newY}px)`;
-          this.updateDragHandlesPosition();
+          if (shouldReorder && this.reorderMode.siblingArrangement) {
+            // REORDER MODE: Check for collision with siblings
+            if (!this.reorderMode.isActive) {
+              this.reorderMode.isActive = true;
+              // Remove transform when entering reorder mode
+              this.selectedElement.style.transform = '';
+              this.selectedElement.classList.add('vc-reordering');
+              console.log('[Visual Claude] Entered reorder mode');
+            }
+
+            const reorderTarget = window.VCUtils.getReorderTarget(
+              this.selectedElement,
+              deltaX,
+              deltaY,
+              this.reorderMode.siblingArrangement.siblings
+            );
+
+            if (reorderTarget) {
+              this.reorderMode.currentTarget = reorderTarget.target;
+              this.reorderMode.insertBefore = reorderTarget.insertBefore;
+              this.reorderMode.newIndex = reorderTarget.index;
+
+              // Show placeholder at insertion point
+              this.showReorderPlaceholderAt(reorderTarget.target, reorderTarget.insertBefore);
+
+              // Animate siblings to make space
+              this.animateSiblingsForReorder();
+            } else {
+              this.hideReorderPlaceholder();
+            }
+
+            // Move dragged element with cursor (use original start position + delta)
+            this.selectedElement.style.position = 'fixed';
+            this.selectedElement.style.left = `${this.dragHandle.elementStartX + deltaX}px`;
+            this.selectedElement.style.top = `${this.dragHandle.elementStartY + deltaY}px`;
+            this.selectedElement.style.pointerEvents = 'none';
+            this.selectedElement.style.zIndex = '999999';
+            this.selectedElement.style.opacity = '0.8';
+          } else {
+            // FREE-DRAG MODE: Apply transform
+            if (this.reorderMode.isActive) {
+              // Exit reorder mode
+              this.exitReorderMode();
+            }
+
+            const newX = deltaX;
+            const newY = deltaY;
+
+            this.selectedElement.style.transform = `translate(${newX}px, ${newY}px)`;
+            this.updateResizeHandlesPosition();
+          }
         } else if (this.dragHandle.isResizing) {
           // Apply size changes for resizing
           const direction = this.dragHandle.resizeDirection;
@@ -849,41 +994,194 @@
           newWidth = Math.max(50, newWidth);
           newHeight = Math.max(50, newHeight);
 
-          this.selectedForVisualEdit.style.width = `${newWidth}px`;
-          this.selectedForVisualEdit.style.height = `${newHeight}px`;
-          this.updateDragHandlesPosition();
+          this.selectedElement.style.width = `${newWidth}px`;
+          this.selectedElement.style.height = `${newHeight}px`;
+          this.updateResizeHandlesPosition();
         }
       },
 
+      showReorderPlaceholderAt(targetElement, insertBefore) {
+        const rect = targetElement.getBoundingClientRect();
+        const isVertical = this.reorderMode.siblingArrangement.isVertical;
+
+        let placeholderStyle = '';
+        if (isVertical) {
+          const y = insertBefore ? rect.top : rect.bottom;
+          placeholderStyle = `left: ${rect.left}px; top: ${y - 2}px; width: ${rect.width}px; height: 4px;`;
+        } else {
+          const x = insertBefore ? rect.left : rect.right;
+          placeholderStyle = `left: ${x - 2}px; top: ${rect.top}px; width: 4px; height: ${rect.height}px;`;
+        }
+
+        this.reorderPlaceholderStyle = placeholderStyle;
+        this.showReorderPlaceholder = true;
+      },
+
+      hideReorderPlaceholder() {
+        this.showReorderPlaceholder = false;
+      },
+
+      animateSiblingsForReorder() {
+        if (!this.reorderMode.currentTarget || !this.selectedElement) return;
+        if (!this.reorderMode.siblingArrangement) return;
+
+        const siblings = this.reorderMode.siblingArrangement.siblings;
+        const draggedElement = this.selectedElement;
+        const draggedRect = draggedElement.getBoundingClientRect();
+        const isVertical = this.reorderMode.siblingArrangement.isVertical;
+        const gap = this.reorderMode.layoutContext.gap || 0;
+
+        const targetIndex = siblings.indexOf(this.reorderMode.currentTarget);
+        const originalIndex = this.reorderMode.originalIndex;
+        const insertIndex = this.reorderMode.insertBefore ? targetIndex : targetIndex + 1;
+
+        // Calculate displacement for each sibling
+        siblings.forEach((sibling, index) => {
+          if (sibling === draggedElement) return;
+
+          // Determine if this sibling needs to move
+          let needsMove = false;
+          if (originalIndex < insertIndex) {
+            // Moving forward: siblings between original and insert move back
+            needsMove = index > originalIndex && index < insertIndex;
+          } else {
+            // Moving backward: siblings between insert and original move forward
+            needsMove = index >= insertIndex && index < originalIndex;
+          }
+
+          if (needsMove) {
+            const offset = isVertical ? draggedRect.height + gap : draggedRect.width + gap;
+            const direction = originalIndex < insertIndex ? -1 : 1;
+            const transform = isVertical
+              ? `translateY(${direction * offset}px)`
+              : `translateX(${direction * offset}px)`;
+
+            sibling.style.transition = 'transform 200ms cubic-bezier(0.2, 0, 0, 1)';
+            sibling.style.transform = transform;
+          } else {
+            sibling.style.transition = 'transform 200ms cubic-bezier(0.2, 0, 0, 1)';
+            sibling.style.transform = '';
+          }
+        });
+      },
+
+      exitReorderMode() {
+        if (!this.reorderMode.isActive) return;
+
+        this.reorderMode.isActive = false;
+        this.hideReorderPlaceholder();
+
+        // Reset dragged element styles
+        if (this.selectedElement) {
+          this.selectedElement.classList.remove('vc-reordering');
+          this.selectedElement.style.position = '';
+          this.selectedElement.style.left = '';
+          this.selectedElement.style.top = '';
+          this.selectedElement.style.pointerEvents = '';
+          this.selectedElement.style.zIndex = '';
+          this.selectedElement.style.opacity = '';
+        }
+
+        // Reset sibling transforms
+        if (this.reorderMode.siblingArrangement) {
+          this.reorderMode.siblingArrangement.siblings.forEach(sibling => {
+            sibling.style.transition = '';
+            sibling.style.transform = '';
+          });
+        }
+
+        // Reset reorder state
+        this.reorderMode.currentTarget = null;
+        this.reorderMode.insertBefore = true;
+        this.reorderMode.newIndex = -1;
+
+        console.log('[Visual Claude] Exited reorder mode');
+      },
+
       handleDragEnd(e) {
-        if (!this.selectedForVisualEdit) return;
+        if (!this.selectedElement) return;
         if (!this.dragHandle.isDragging && !this.dragHandle.isResizing) return;
 
         e.preventDefault();
 
-        // Store the change
-        const selector = window.VCUtils.getSelector(this.selectedForVisualEdit);
-        const computedStyle = window.getComputedStyle(this.selectedForVisualEdit);
+        const selector = window.VCUtils.getSelector(this.selectedElement);
+        const computedStyle = window.getComputedStyle(this.selectedElement);
 
-        const change = {
-          transform: this.selectedForVisualEdit.style.transform || '',
-          width: this.selectedForVisualEdit.style.width || '',
-          height: this.selectedForVisualEdit.style.height || '',
-          originalStyles: {
-            transform: computedStyle.transform !== 'none' ? computedStyle.transform : '',
-            width: computedStyle.width,
-            height: computedStyle.height,
+        // Check if this was a reorder operation
+        if (this.reorderMode.isActive && this.reorderMode.currentTarget) {
+          // REORDER OPERATION
+          const parentSelector = window.VCUtils.getSelector(this.reorderMode.layoutContext.parent);
+          const targetSelector = window.VCUtils.getSelector(this.reorderMode.currentTarget);
+
+          const change = {
+            operation: 'reorder',
+            reorderData: {
+              parentSelector: parentSelector,
+              fromIndex: this.reorderMode.originalIndex,
+              toIndex: this.reorderMode.insertBefore ? this.reorderMode.newIndex : this.reorderMode.newIndex + 1,
+              insertBeforeSelector: this.reorderMode.insertBefore ? targetSelector : null,
+              insertAfterSelector: !this.reorderMode.insertBefore ? targetSelector : null,
+            },
+            originalStyles: {
+              transform: computedStyle.transform !== 'none' ? computedStyle.transform : '',
+              width: computedStyle.width,
+              height: computedStyle.height,
+            }
+          };
+
+          this.pendingChanges.set(selector, change);
+          console.log('[Visual Claude] Stored reorder operation:', selector, change);
+
+          // Actually reorder in DOM for immediate visual feedback
+          const parent = this.reorderMode.layoutContext.parent;
+          if (this.reorderMode.insertBefore) {
+            parent.insertBefore(this.selectedElement, this.reorderMode.currentTarget);
+          } else {
+            const nextSibling = this.reorderMode.currentTarget.nextSibling;
+            if (nextSibling) {
+              parent.insertBefore(this.selectedElement, nextSibling);
+            } else {
+              parent.appendChild(this.selectedElement);
+            }
           }
-        };
 
-        this.pendingChanges.set(selector, change);
-        console.log('[Visual Claude] Stored pending change:', selector, change);
+          // Exit reorder mode and clean up
+          this.exitReorderMode();
+        } else {
+          // TRANSFORM/RESIZE OPERATION
+          const change = {
+            operation: 'transform',
+            styles: {
+              transform: this.selectedElement.style.transform || '',
+              width: this.selectedElement.style.width || '',
+              height: this.selectedElement.style.height || '',
+            },
+            originalStyles: {
+              transform: computedStyle.transform !== 'none' ? computedStyle.transform : '',
+              width: computedStyle.width,
+              height: computedStyle.height,
+            }
+          };
+
+          this.pendingChanges.set(selector, change);
+          console.log('[Visual Claude] Stored transform/resize:', selector, change);
+        }
 
         // Reset drag state
         this.dragHandle.isDragging = false;
         this.dragHandle.isResizing = false;
+        this.dragHandle.isDraggingFromHandle = false;
         this.dragHandle.resizeDirection = '';
         document.body.style.cursor = '';
+
+        // Reset reorder mode state
+        this.reorderMode.isActive = false;
+        this.reorderMode.layoutContext = null;
+        this.reorderMode.siblingArrangement = null;
+        this.reorderMode.currentTarget = null;
+        this.reorderMode.insertBefore = true;
+        this.reorderMode.originalIndex = -1;
+        this.reorderMode.newIndex = -1;
 
         // Remove global listeners
         document.removeEventListener('mousemove', this.handleDragMove.bind(this));
@@ -901,14 +1199,24 @@
         // Convert Map to array for WebSocket
         const changes = [];
         this.pendingChanges.forEach((change, selector) => {
-          changes.push({
+          const changeData = {
             selector: selector,
-            styles: {
-              transform: change.transform,
-              width: change.width,
-              height: change.height,
-            }
-          });
+            operation: change.operation || 'transform', // Default to transform for backward compatibility
+          };
+
+          if (change.operation === 'reorder') {
+            // Reorder operation
+            changeData.reorderData = change.reorderData;
+          } else {
+            // Transform/resize operation
+            changeData.styles = change.styles || {
+              transform: change.transform || '',
+              width: change.width || '',
+              height: change.height || '',
+            };
+          }
+
+          changes.push(changeData);
         });
 
         // Send to backend
@@ -923,7 +1231,7 @@
 
           // Clear pending changes
           this.pendingChanges.clear();
-          this.deselectVisualElement();
+          this.deselectElement();
         } else {
           console.error('[Visual Claude] ✗ WebSocket not connected');
         }
@@ -1133,6 +1441,18 @@
     </div>
   `;
 
+  // Reorder Placeholder Line
+  app.innerHTML += `
+    <div x-show="showReorderPlaceholder"
+         x-bind:style="reorderPlaceholderStyle"
+         class="vc-reorder-placeholder fixed z-[1000001] pointer-events-none">
+      <div class="vc-placeholder-line bg-[#3b82f6] rounded-full shadow-lg relative">
+        <div class="absolute inset-0 bg-[#3b82f6] opacity-30 blur-sm"></div>
+        <div class="absolute inset-0 bg-[#3b82f6]"></div>
+      </div>
+    </div>
+  `;
+
   // Inline Input Modal
   app.innerHTML += `
     <div x-show="showInlineInput"
@@ -1308,10 +1628,28 @@
     </div>
   `;
 
-  // Drag Handles Overlay
+  // Hover Drag Handle (appears on left side with larger hitbox)
   app.innerHTML += `
-    <div x-show="showDragHandles"
-         x-bind:style="dragHandlesStyle"
+    <div x-show="showHoverDragHandle"
+         x-bind:style="hoverDragHandleStyle"
+         @mousedown="startDragFromHoverHandle($event)"
+         @mouseenter="$event.stopPropagation()"
+         class="vc-hover-drag-handle fixed z-[1000002] pointer-events-auto cursor-move">
+      <!-- Invisible larger hitbox to prevent flickering -->
+      <div class="absolute -inset-2"></div>
+      <!-- Visible handle -->
+      <div class="relative w-6 h-6 rounded-full bg-[#3b82f6] border-2 border-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform">
+        <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/>
+        </svg>
+      </div>
+    </div>
+  `;
+
+  // Resize Handles Overlay (shown when element is selected)
+  app.innerHTML += `
+    <div x-show="showResizeHandles"
+         x-bind:style="resizeHandlesStyle"
          class="vc-drag-handles fixed z-[1000002] pointer-events-none">
       <!-- Center Drag Handle -->
       <div @mousedown="startDrag($event, 'move')"
@@ -1339,9 +1677,9 @@
     </div>
   `;
 
-  // Visual Edit Toolbar (Apply/Discard)
+  // Visual Edit Toolbar (Apply/Discard) - shows when there are pending changes
   app.innerHTML += `
-    <div x-show="isVisualEditMode && pendingChangesCount > 0"
+    <div x-show="pendingChangesCount > 0"
          x-transition
          class="vc-visual-toolbar fixed bottom-24 right-6 z-[1000003] flex items-center gap-2 bg-white border-[2.5px] border-[#333] rounded-lg shadow-lg p-2">
       <span class="text-xs font-semibold text-[#333] px-2" x-text="pendingChangesCount + ' change' + (pendingChangesCount !== 1 ? 's' : '')"></span>
@@ -1356,12 +1694,11 @@
     </div>
   `;
 
-  // Bottom Control Bar (Pill Design)
+  // Bottom Control Bar (Pill Design) - Simplified unified mode
   app.innerHTML += `
     <div class="vc-control-bar fixed bottom-6 right-6 z-[1000003] flex items-center bg-white border-[2.5px] border-[#333] rounded-full shadow-lg">
       <!-- Design Upload Button -->
       <button @click="openDesignModal()"
-              x-show="!isVisualEditMode"
               title="Create from Design"
               class="flex items-center justify-center w-12 h-12 text-[#333] outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 rounded-l-full active:scale-95">
         <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -1370,40 +1707,15 @@
       </button>
 
       <!-- Divider -->
-      <div x-show="!isVisualEditMode" class="w-[2.5px] h-8 bg-[#333]"></div>
-
-      <!-- Visual Edit Mode Button -->
-      <button @click="toggleVisualEditMode()"
-              x-bind:class="{'bg-[#8B5CF6] text-white': isVisualEditMode, 'text-[#333] hover:bg-gray-100': !isVisualEditMode}"
-              x-bind:title="isVisualEditMode ? 'Visual Edit Mode - Click to disable' : 'Enable Visual Edit Mode'"
-              class="flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer active:scale-95"
-              x-bind:class="{'rounded-l-full': isVisualEditMode, '': !isVisualEditMode}">
-        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
-        </svg>
-      </button>
-
-      <!-- Divider -->
       <div class="w-[2.5px] h-8 bg-[#333]"></div>
 
       <!-- Edit/View Mode Toggle Button -->
       <button @click="toggleMode()"
-              x-show="!isVisualEditMode"
               x-bind:class="modeClass"
               x-bind:title="modeTitle"
               class="vc-mode-toggle flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer rounded-r-full active:scale-95">
         <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path x-bind:d="modeIcon"></path>
-        </svg>
-      </button>
-
-      <!-- Exit Visual Mode Button (when in visual mode) -->
-      <button @click="toggleVisualEditMode()"
-              x-show="isVisualEditMode"
-              title="Exit Visual Edit Mode"
-              class="flex items-center justify-center w-12 h-12 text-[#333] outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 rounded-r-full active:scale-95">
-        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
         </svg>
       </button>
     </div>

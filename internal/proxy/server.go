@@ -307,20 +307,53 @@ func (s *Server) handleApplyVisualEdits(conn *websocket.Conn, data map[string]in
 		}
 
 		selector, _ := changeMap["selector"].(string)
-		stylesData, _ := changeMap["styles"].(map[string]interface{})
+		operation, _ := changeMap["operation"].(string)
 
-		instruction.WriteString(fmt.Sprintf("%d. Element: %s\n", i+1, selector))
+		// Default to transform if operation not specified (backward compatibility)
+		if operation == "" {
+			operation = "transform"
+		}
 
-		if transform, ok := stylesData["transform"].(string); ok && transform != "" {
-			instruction.WriteString(fmt.Sprintf("   - Position changed: %s\n", transform))
+		if operation == "reorder" {
+			// REORDER OPERATION
+			reorderData, ok := changeMap["reorderData"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			parentSelector, _ := reorderData["parentSelector"].(string)
+			fromIndex, _ := reorderData["fromIndex"].(float64) // JSON numbers are float64
+			toIndex, _ := reorderData["toIndex"].(float64)
+			insertBeforeSelector, _ := reorderData["insertBeforeSelector"].(string)
+			insertAfterSelector, _ := reorderData["insertAfterSelector"].(string)
+
+			instruction.WriteString(fmt.Sprintf("%d. REORDER: Element '%s'\n", i+1, selector))
+			instruction.WriteString(fmt.Sprintf("   - Parent container: %s\n", parentSelector))
+			instruction.WriteString(fmt.Sprintf("   - Move from position %d to position %d\n", int(fromIndex), int(toIndex)))
+
+			if insertBeforeSelector != "" {
+				instruction.WriteString(fmt.Sprintf("   - Insert before: %s\n", insertBeforeSelector))
+			} else if insertAfterSelector != "" {
+				instruction.WriteString(fmt.Sprintf("   - Insert after: %s\n", insertAfterSelector))
+			}
+			instruction.WriteString("\n")
+		} else {
+			// TRANSFORM/RESIZE OPERATION
+			stylesData, _ := changeMap["styles"].(map[string]interface{})
+
+			instruction.WriteString(fmt.Sprintf("%d. TRANSFORM: Element '%s'\n", i+1, selector))
+
+			if transform, ok := stylesData["transform"].(string); ok && transform != "" {
+				instruction.WriteString(fmt.Sprintf("   - Position changed: %s\n", transform))
+			}
+			if width, ok := stylesData["width"].(string); ok && width != "" {
+				instruction.WriteString(fmt.Sprintf("   - Width: %s\n", width))
+			}
+			if height, ok := stylesData["height"].(string); ok && height != "" {
+				instruction.WriteString(fmt.Sprintf("   - Height: %s\n", height))
+			}
+			instruction.WriteString("\n")
 		}
-		if width, ok := stylesData["width"].(string); ok && width != "" {
-			instruction.WriteString(fmt.Sprintf("   - Width: %s\n", width))
-		}
-		if height, ok := stylesData["height"].(string); ok && height != "" {
-			instruction.WriteString(fmt.Sprintf("   - Height: %s\n", height))
-		}
-		instruction.WriteString("\n")
 	}
 
 	instruction.WriteString(fmt.Sprintf(`
@@ -331,20 +364,38 @@ Please analyze the codebase and apply these visual changes appropriately:
 - Styling: %s
 
 **Instructions:**
-1. Identify where these elements are defined in the code
-2. Apply the position/size changes using the project's styling approach:
-   - If using Tailwind CSS: Update className with appropriate utility classes (absolute, left-*, top-*, w-*, h-*)
-   - If using styled-components/CSS-in-JS: Update the styled component definitions
-   - If using CSS files: Update the relevant stylesheet with the new values
+
+FOR REORDER OPERATIONS:
+1. Identify the parent container and how children are rendered
+2. Determine the reordering strategy based on the code structure:
+   - If children are rendered from an array (Array.map, v-for, etc.): Reorder the data array
+   - If children are static JSX/template elements: Reorder the elements in the source code
+   - If using flexbox/grid: Consider using CSS 'order' property as an alternative
+3. Update the appropriate file:
+   - For React: Reorder JSX elements or update state/data array
+   - For Vue: Reorder template elements or update reactive data
+   - For Svelte: Reorder template or update reactive statements
+   - For Angular: Reorder template or update component array
+4. Ensure list keys are properly maintained if using arrays
+5. Preserve all props, attributes, and event handlers during reordering
+
+FOR TRANSFORM/RESIZE OPERATIONS:
+1. Identify where elements are defined in the code
+2. Apply position/size changes using the project's styling approach:
+   - If using Tailwind CSS: Update className with utility classes (absolute, left-*, top-*, w-*, h-*)
+   - If using styled-components/CSS-in-JS: Update styled component definitions
+   - If using CSS files: Update the relevant stylesheet
    - If using inline styles: Update the style prop/attribute
-
-3. Consider the layout context:
-   - If the element needs to be positioned absolutely, ensure parent has position: relative
+3. Consider layout context:
+   - For absolute positioning, ensure parent has position: relative
    - Maintain responsive design - don't break mobile layouts
-   - Preserve any existing animations or transitions
+   - Preserve existing animations or transitions
 
-4. Make the changes permanent in the appropriate files
-5. Ensure the code remains clean and maintainable
+**General Guidelines:**
+- Make changes permanent in the appropriate files
+- Keep code clean and maintainable
+- Preserve component functionality and state
+- Test that the changes work as expected
 
 Apply these changes now.`, ctx.Framework, ctx.Styling))
 

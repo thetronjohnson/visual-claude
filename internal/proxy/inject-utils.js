@@ -50,7 +50,8 @@
     // VC UI Selector (for skipping our own elements)
     VC_UI_SELECTOR: '.vc-selection-rect, .vc-selection-info, .vc-inline-input, ' +
                    '.vc-status-indicator, .vc-text-editor, .vc-mode-toolbar, .vc-design-modal, ' +
-                   '.vc-control-bar, .vc-drag-handles, .vc-visual-toolbar',
+                   '.vc-control-bar, .vc-drag-handles, .vc-visual-toolbar, .vc-hover-drag-handle, ' +
+                   '.vc-reorder-placeholder',
   };
 
   // ============================================================================
@@ -327,6 +328,166 @@
         width: Math.abs(end.x - start.x),
         height: Math.abs(end.y - start.y),
       };
+    },
+
+    /**
+     * Detect layout context of parent container
+     * @param {Element} element - DOM element
+     * @returns {Object} Layout information
+     */
+    detectLayoutContext(element) {
+      if (!element || !element.parentElement) return null;
+
+      const parent = element.parentElement;
+      const computedStyle = window.getComputedStyle(parent);
+
+      return {
+        isFlex: computedStyle.display.includes('flex'),
+        isGrid: computedStyle.display === 'grid',
+        isBlock: computedStyle.display === 'block',
+        flexDirection: computedStyle.flexDirection || 'row',
+        gap: parseFloat(computedStyle.gap) || 0,
+        parent: parent,
+      };
+    },
+
+    /**
+     * Get sibling arrangement and detect if vertical or horizontal
+     * @param {Element} element - DOM element
+     * @returns {Object} Arrangement information
+     */
+    getSiblingArrangement(element) {
+      if (!element || !element.parentElement) return null;
+
+      const parent = element.parentElement;
+      const siblings = Array.from(parent.children).filter(child => {
+        // Filter out VC UI elements
+        return !child.closest(window.VCConstants.VC_UI_SELECTOR) &&
+               child.nodeType === Node.ELEMENT_NODE &&
+               window.getComputedStyle(child).display !== 'none';
+      });
+
+      if (siblings.length < 2) return null;
+
+      const rects = siblings.map(s => s.getBoundingClientRect());
+      const tolerance = 10; // 10px tolerance for alignment
+
+      // Check if arranged vertically (stacked)
+      let isVertical = true;
+      for (let i = 1; i < rects.length; i++) {
+        const prev = rects[i - 1];
+        const curr = rects[i];
+        // Current element should start below or at the bottom of previous
+        if (curr.top < prev.bottom - tolerance) {
+          isVertical = false;
+          break;
+        }
+      }
+
+      // Check if arranged horizontally (side by side)
+      let isHorizontal = true;
+      for (let i = 1; i < rects.length; i++) {
+        const prev = rects[i - 1];
+        const curr = rects[i];
+        // Current element should start to the right of previous
+        if (curr.left < prev.right - tolerance) {
+          isHorizontal = false;
+          break;
+        }
+      }
+
+      return {
+        siblings: siblings,
+        rects: rects,
+        isVertical: isVertical,
+        isHorizontal: isHorizontal,
+        count: siblings.length,
+      };
+    },
+
+    /**
+     * Determine if drag should trigger reorder based on context and movement
+     * @param {Element} element - Element being dragged
+     * @param {number} deltaX - Horizontal drag distance
+     * @param {number} deltaY - Vertical drag distance
+     * @param {Object} layoutContext - Layout context from detectLayoutContext
+     * @param {Object} siblingArrangement - Sibling arrangement from getSiblingArrangement
+     * @returns {boolean} Whether to trigger reorder
+     */
+    shouldTriggerReorder(element, deltaX, deltaY, layoutContext, siblingArrangement) {
+      if (!layoutContext || !siblingArrangement) return false;
+      if (siblingArrangement.count < 2) return false;
+
+      const threshold = 20; // Minimum drag distance to trigger reorder
+
+      // For flex column or vertical arrangement
+      if ((layoutContext.isFlex && layoutContext.flexDirection === 'column') ||
+          (siblingArrangement.isVertical && !siblingArrangement.isHorizontal)) {
+        return Math.abs(deltaY) > threshold;
+      }
+
+      // For flex row or horizontal arrangement
+      if ((layoutContext.isFlex && layoutContext.flexDirection === 'row') ||
+          (siblingArrangement.isHorizontal && !siblingArrangement.isVertical)) {
+        return Math.abs(deltaX) > threshold;
+      }
+
+      // For grid or block flow (typically vertical)
+      if (layoutContext.isGrid || layoutContext.isBlock) {
+        if (siblingArrangement.isVertical) {
+          return Math.abs(deltaY) > threshold;
+        }
+      }
+
+      return false;
+    },
+
+    /**
+     * Find which sibling element is being hovered over during drag
+     * @param {Element} draggingElement - Element being dragged
+     * @param {number} deltaX - Horizontal drag offset
+     * @param {number} deltaY - Vertical drag offset
+     * @param {Array<Element>} siblings - Array of sibling elements
+     * @returns {Object} {target: Element, insertBefore: boolean} or null
+     */
+    getReorderTarget(draggingElement, deltaX, deltaY, siblings) {
+      if (!siblings || siblings.length === 0) return null;
+
+      const dragRect = draggingElement.getBoundingClientRect();
+      const dragCenter = {
+        x: dragRect.left + dragRect.width / 2 + deltaX,
+        y: dragRect.top + dragRect.height / 2 + deltaY,
+      };
+
+      // Find which sibling's bounding box contains the drag center
+      for (let i = 0; i < siblings.length; i++) {
+        const sibling = siblings[i];
+        if (sibling === draggingElement) continue;
+
+        const rect = sibling.getBoundingClientRect();
+        const siblingCenter = {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        };
+
+        // Check if drag center is within sibling bounds
+        if (dragCenter.x >= rect.left && dragCenter.x <= rect.right &&
+            dragCenter.y >= rect.top && dragCenter.y <= rect.bottom) {
+
+          // Determine if we should insert before or after
+          const insertBefore = dragCenter.y < siblingCenter.y ||
+                              (Math.abs(dragCenter.y - siblingCenter.y) < 5 &&
+                               dragCenter.x < siblingCenter.x);
+
+          return {
+            target: sibling,
+            insertBefore: insertBefore,
+            index: i,
+          };
+        }
+      }
+
+      return null;
     }
   };
 
