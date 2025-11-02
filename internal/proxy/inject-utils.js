@@ -109,8 +109,20 @@
             ? element.className
             : element.className.baseVal || '';
           const classes = classNameStr.trim().split(/\s+/).filter(c => !c.startsWith('vc-'));
+
+          // Use up to 3 classes for better specificity (avoid matching wrong elements)
           if (classes.length > 0) {
-            selector += '.' + classes[0];
+            const numClasses = Math.min(3, classes.length);
+            selector += '.' + classes.slice(0, numClasses).join('.');
+          }
+        }
+
+        // If this is the target element (last in path), add nth-child for extra specificity
+        if (path.length === 0 && element.parentElement) {
+          const siblings = Array.from(element.parentElement.children);
+          const index = siblings.indexOf(element);
+          if (index >= 0) {
+            selector += `:nth-child(${index + 1})`;
           }
         }
 
@@ -136,6 +148,62 @@
           : element.className.baseVal || '';
       }
 
+      // Get parent context
+      let parentInfo = null;
+      if (element.parentElement) {
+        let parentClasses = '';
+        if (element.parentElement.className) {
+          parentClasses = typeof element.parentElement.className === 'string'
+            ? element.parentElement.className
+            : element.parentElement.className.baseVal || '';
+        }
+
+        // Get truncated parent HTML (first 800 chars to show structure)
+        const parentHTML = element.parentElement.outerHTML || '';
+        const truncatedParentHTML = parentHTML.length > 800
+          ? parentHTML.substring(0, 800) + '...'
+          : parentHTML;
+
+        parentInfo = {
+          tagName: element.parentElement.tagName,
+          id: element.parentElement.id || '',
+          classes: parentClasses,
+          selector: this.getSelector(element.parentElement),
+          outerHTML: truncatedParentHTML,
+        };
+      }
+
+      // Get sibling elements (up to 3) for pattern matching
+      const siblings = [];
+      if (element.parentElement && element.parentElement.children) {
+        const siblingElements = Array.from(element.parentElement.children)
+          .filter(s => s !== element && s.nodeType === 1); // Exclude self and non-elements
+
+        // Get up to 3 siblings for pattern analysis
+        const siblingsToAnalyze = siblingElements.slice(0, 3);
+
+        for (const sibling of siblingsToAnalyze) {
+          let siblingClasses = '';
+          if (sibling.className) {
+            siblingClasses = typeof sibling.className === 'string'
+              ? sibling.className
+              : sibling.className.baseVal || '';
+          }
+
+          // Get truncated sibling HTML (increased to 1200 chars for complex SVGs)
+          const siblingHTML = sibling.outerHTML || '';
+          const truncatedSiblingHTML = siblingHTML.length > 1200
+            ? siblingHTML.substring(0, 1200) + '...'
+            : siblingHTML;
+
+          siblings.push({
+            tagName: sibling.tagName,
+            classes: siblingClasses,
+            outerHTML: truncatedSiblingHTML,
+          });
+        }
+      }
+
       return {
         tagName: element.tagName,
         id: element.id || '',
@@ -143,6 +211,8 @@
         selector: this.getSelector(element),
         innerText: element.innerText || '',
         outerHTML: element.outerHTML || '',
+        parent: parentInfo,
+        siblings: siblings,
       };
     },
 

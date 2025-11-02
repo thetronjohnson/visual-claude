@@ -178,6 +178,24 @@ type ElementInfo struct {
 	Selector  string
 	InnerText string
 	OuterHTML string
+	Parent    *ParentInfo     `json:"parent,omitempty"`
+	Siblings  []SiblingInfo   `json:"siblings,omitempty"`
+}
+
+// ParentInfo represents parent element information
+type ParentInfo struct {
+	TagName   string `json:"tagName"`
+	ID        string `json:"id"`
+	Classes   string `json:"classes"`
+	Selector  string `json:"selector"`
+	OuterHTML string `json:"outerHTML"`
+}
+
+// SiblingInfo represents sibling element information
+type SiblingInfo struct {
+	TagName   string `json:"tagName"`
+	Classes   string `json:"classes"`
+	OuterHTML string `json:"outerHTML"`
 }
 
 // DOMChange represents a single DOM manipulation instruction
@@ -187,6 +205,7 @@ type DOMChange struct {
 	Value     string `json:"value,omitempty"`
 	Property  string `json:"property,omitempty"`
 	Attribute string `json:"attribute,omitempty"`
+	Position  string `json:"position,omitempty"` // For insertAdjacentHTML: beforebegin, afterbegin, beforeend, afterend
 }
 
 // PreviewResponse represents the expected JSON structure from Claude
@@ -220,6 +239,74 @@ func (c *Client) GeneratePreview(instruction string, elements []ElementInfo, scr
 	}
 	if selectedEl.InnerText != "" && len(selectedEl.InnerText) < 50 {
 		selectedElDesc += fmt.Sprintf(" text='%s'", selectedEl.InnerText)
+	}
+
+	// Build parent context
+	var parentDesc string
+	if selectedEl.Parent != nil {
+		parentDesc = fmt.Sprintf("\n**PARENT CONTAINER:**\n")
+		parentDesc += fmt.Sprintf("Tag: %s", selectedEl.Parent.TagName)
+		if selectedEl.Parent.ID != "" {
+			parentDesc += fmt.Sprintf(", ID: %s", selectedEl.Parent.ID)
+		}
+		if selectedEl.Parent.Classes != "" {
+			parentDesc += fmt.Sprintf(", Classes: %s", selectedEl.Parent.Classes)
+		}
+		parentDesc += fmt.Sprintf("\nSelector: %s\n", selectedEl.Parent.Selector)
+		parentDesc += fmt.Sprintf("HTML Structure:\n%s\n", selectedEl.Parent.OuterHTML)
+	} else {
+		parentDesc = "\n**PARENT CONTAINER:** (none)\n"
+	}
+
+	// Build sibling context for pattern matching
+	var siblingsDesc string
+	if len(selectedEl.Siblings) > 0 {
+		siblingsDesc = fmt.Sprintf("\n**SIBLING ELEMENTS (COPY THESE EXACTLY):**\n")
+		siblingsDesc += "‼️ CRITICAL: When adding new elements, COPY the HTML structure below EXACTLY.\n"
+		siblingsDesc += "Only change the href, aria-label, and SVG icon. Keep ALL classes, structure, and styling identical.\n\n"
+		for i, sibling := range selectedEl.Siblings {
+			siblingsDesc += fmt.Sprintf("SIBLING #%d - %s", i+1, sibling.TagName)
+			if sibling.Classes != "" {
+				siblingsDesc += fmt.Sprintf(" class='%s'", sibling.Classes)
+			}
+			siblingsDesc += fmt.Sprintf("\n📋 TEMPLATE TO COPY:\n%s\n\n", sibling.OuterHTML)
+		}
+		siblingsDesc += "⚠️ Use the EXACT same class names, structure, and attributes from above!\n"
+	} else {
+		siblingsDesc = "\n**SIBLING ELEMENTS:** (none - this element has no siblings)\n"
+	}
+
+	// Smart position detection
+	// Determine recommended position based on element type
+	recommendedPosition := "afterend" // default: insert after element as sibling
+	var positionGuidance string
+
+	// Check if the clicked element is likely a container
+	isContainer := false
+	containerTags := map[string]bool{
+		"DIV": true, "SECTION": true, "ARTICLE": true, "MAIN": true,
+		"HEADER": true, "FOOTER": true, "NAV": true, "ASIDE": true,
+		"UL": true, "OL": true, "FORM": true,
+	}
+	if containerTags[selectedEl.TagName] {
+		isContainer = true
+		recommendedPosition = "beforeend" // insert inside container as last child
+	}
+
+	if isContainer {
+		positionGuidance = fmt.Sprintf(`
+**POSITION GUIDANCE:**
+The selected element is a CONTAINER (%s). When adding new elements:
+- Use position "beforeend" to insert INSIDE the container as the last child
+- This is the recommended approach for containers
+- Only use "afterend" if the user explicitly wants the element AFTER/OUTSIDE the container`, selectedEl.TagName)
+	} else {
+		positionGuidance = fmt.Sprintf(`
+**POSITION GUIDANCE:**
+The selected element is a CHILD ELEMENT (%s). When adding new elements:
+- Use position "afterend" to insert as a sibling AFTER this element
+- Use position "beforebegin" to insert as a sibling BEFORE this element
+- Match the sibling patterns shown above`, selectedEl.TagName)
 	}
 
 	// Build additional context elements (if any)
@@ -278,8 +365,11 @@ func (c *Client) GeneratePreview(instruction string, elements []ElementInfo, scr
 User instruction: "%s"
 
 **SELECTED ELEMENT (the user clicked on this):**
-1. %s (selector: %s)
-
+%s
+**EXACT SELECTOR TO USE IN ALL CHANGES: %s**
+%s
+%s
+%s
 Additional context elements:
 %s
 %s
@@ -287,13 +377,14 @@ Additional context elements:
 
 Your task:
 1. Analyze the user's instruction: "%s"
-2. **Apply changes to the SELECTED ELEMENT above (element #1 that the user clicked on)**
+2. **Apply changes to the SELECTED ELEMENT above using the EXACT SELECTOR shown**
 3. Return a JSON object with this EXACT structure:
 
 {
   "changes": [
-    {"selector": "CSS_SELECTOR", "action": "ACTION_TYPE", "value": "VALUE"},
-    {"selector": "CSS_SELECTOR", "action": "setStyle", "property": "CSS_PROPERTY", "value": "CSS_VALUE"}
+    {"selector": "%s", "action": "ACTION_TYPE", "value": "VALUE"},
+    {"selector": "%s", "action": "setStyle", "property": "CSS_PROPERTY", "value": "CSS_VALUE"},
+    {"selector": "%s", "action": "insertAdjacentHTML", "position": "%s", "value": "<button class='btn-primary'>New Button</button>"}
   ]
 }
 
@@ -306,18 +397,30 @@ Supported actions:
 - "setAttribute": Set attribute (attribute = attr name, value = attr value)
 - "remove": Remove/delete the element from DOM (no value needed)
 - "hide": Hide element by setting display:none (no value needed)
+- "insertAdjacentHTML": Insert HTML adjacent to element (position = "beforebegin"|"afterbegin"|"beforeend"|"afterend", value = HTML string)
 
 Rules:
-1. Return ONLY the JSON object - no explanations before or after
-2. Do NOT wrap in markdown code blocks (no triple-backticks or json keyword)
-3. **Use the SELECTED ELEMENT's selector in your changes (the one the user clicked on)**
-4. Be specific and intentional with changes
-5. Prefer CSS classes over inline styles when possible
-6. **IMPORTANT: Use the design system tokens above for colors, spacing, and typography**
+1. **CRITICAL: ALL changes MUST use this EXACT selector: %s - DO NOT modify or shorten it**
+2. Return ONLY the JSON object - no explanations before or after
+3. Do NOT wrap in markdown code blocks (no triple-backticks or json keyword)
+4. **‼️ FOR ADDING ELEMENTS: COPY sibling HTML EXACTLY as a template:**
+   - Take one sibling's HTML from "TEMPLATE TO COPY" above
+   - Keep ALL class names identical (do not invent new classes)
+   - Keep the exact same HTML structure (same tags, same nesting)
+   - Only change: href URL, aria-label text, and the SVG path/icon
+   - Example: If sibling is <a class="foo bar"><svg class="baz">...</svg></a>
+   - Your new element MUST be <a class="foo bar"><svg class="baz">...new icon...</svg></a>
+5. When adding new elements with insertAdjacentHTML:
+    - Use the EXACT selector above: %s
+    - Copy a sibling's HTML structure as your template
+    - Follow the position guidance above (recommended position: "%s")
+    - For containers: use "beforeend" to insert inside as last child
+    - For child elements: use "afterend" or "beforebegin" to insert as sibling
+6. **IMPORTANT: Use the design system tokens for colors, spacing, and typography**
 7. When setting styles, prefer CSS custom properties (var(--token-name)) over hardcoded values
-8. If the user says "this button" or "this element", they mean the SELECTED ELEMENT above
+8. Prefer CSS classes over inline styles when possible
 
-Return the JSON now:`, instruction, selectedElDesc, selectedEl.Selector, additionalElementsDesc, designTokensDesc, instruction)
+Return the JSON now:`, instruction, selectedElDesc, selectedEl.Selector, parentDesc, siblingsDesc, positionGuidance, additionalElementsDesc, designTokensDesc, instruction, selectedEl.Selector, selectedEl.Selector, selectedEl.Selector, recommendedPosition, selectedEl.Selector, selectedEl.Selector, recommendedPosition)
 
 	// Build content array (text + optional image)
 	contentArray := []Content{

@@ -482,6 +482,33 @@ func (s *Server) handleAIPreview(conn *websocket.Conn, data map[string]interface
 		if !ok {
 			continue
 		}
+
+		// Parse parent info (optional)
+		var parentInfo *ai.ParentInfo
+		if parentData, ok := elMap["parent"].(map[string]interface{}); ok {
+			parentInfo = &ai.ParentInfo{
+				TagName:   getString(parentData, "tagName"),
+				ID:        getString(parentData, "id"),
+				Classes:   getString(parentData, "classes"),
+				Selector:  getString(parentData, "selector"),
+				OuterHTML: getString(parentData, "outerHTML"),
+			}
+		}
+
+		// Parse siblings info (optional)
+		var siblings []ai.SiblingInfo
+		if siblingsData, ok := elMap["siblings"].([]interface{}); ok {
+			for _, sibData := range siblingsData {
+				if sibMap, ok := sibData.(map[string]interface{}); ok {
+					siblings = append(siblings, ai.SiblingInfo{
+						TagName:   getString(sibMap, "tagName"),
+						Classes:   getString(sibMap, "classes"),
+						OuterHTML: getString(sibMap, "outerHTML"),
+					})
+				}
+			}
+		}
+
 		elements = append(elements, ai.ElementInfo{
 			TagName:   getString(elMap, "tagName"),
 			ID:        getString(elMap, "id"),
@@ -489,11 +516,44 @@ func (s *Server) handleAIPreview(conn *websocket.Conn, data map[string]interface
 			Selector:  getString(elMap, "selector"),
 			InnerText: getString(elMap, "innerText"),
 			OuterHTML: getString(elMap, "outerHTML"),
+			Parent:    parentInfo,
+			Siblings:  siblings,
 		})
 	}
 
 	if len(elements) == 0 {
 		return fmt.Errorf("no elements provided")
+	}
+
+	// DEBUG: Log received element info
+	if len(elements) > 0 {
+		el := elements[0]
+		fmt.Printf("[Proxy] 🔍 DEBUG - Received element:\n")
+		fmt.Printf("  Tag: %s, ID: %s, Classes: %s\n", el.TagName, el.ID, el.Classes)
+		fmt.Printf("  Selector: %s\n", el.Selector)
+
+		if el.Parent != nil {
+			fmt.Printf("  📦 Parent: %s", el.Parent.TagName)
+			if el.Parent.Classes != "" {
+				fmt.Printf(" class='%s'", el.Parent.Classes)
+			}
+			fmt.Println()
+		} else {
+			fmt.Println("  📦 Parent: none")
+		}
+
+		if len(el.Siblings) > 0 {
+			fmt.Printf("  👥 Siblings: %d\n", len(el.Siblings))
+			for i, sib := range el.Siblings {
+				fmt.Printf("    %d. %s", i+1, sib.TagName)
+				if sib.Classes != "" {
+					fmt.Printf(" class='%s'", sib.Classes)
+				}
+				fmt.Println()
+			}
+		} else {
+			fmt.Println("  👥 Siblings: none")
+		}
 	}
 
 	// Extract design tokens (optional)
@@ -570,6 +630,23 @@ func (s *Server) handleAIPreview(conn *websocket.Conn, data map[string]interface
 		fmt.Printf("[Proxy] ✅ Claude returned %d DOM change(s)\n", len(changes))
 	}
 
+	// DEBUG: Log AI response details
+	fmt.Println("[Proxy] 🤖 AI Response Changes:")
+	for i, change := range changes {
+		fmt.Printf("  %d. Action: %s, Selector: %s\n", i+1, change.Action, change.Selector)
+		if change.Position != "" {
+			fmt.Printf("     Position: %s\n", change.Position)
+		}
+		if change.Value != "" {
+			// Truncate long HTML values
+			val := change.Value
+			if len(val) > 100 {
+				val = val[:100] + "..."
+			}
+			fmt.Printf("     Value: %s\n", val)
+		}
+	}
+
 	// Convert ai.DOMChange to frontend format
 	changesForFrontend := make([]map[string]interface{}, 0, len(changes))
 	for _, change := range changes {
@@ -586,6 +663,9 @@ func (s *Server) handleAIPreview(conn *websocket.Conn, data map[string]interface
 		}
 		if change.Attribute != "" {
 			changeMap["attribute"] = change.Attribute
+		}
+		if change.Position != "" {
+			changeMap["position"] = change.Position
 		}
 
 		changesForFrontend = append(changesForFrontend, changeMap)

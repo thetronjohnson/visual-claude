@@ -642,6 +642,41 @@
         const instruction = this.inlineInputText.trim();
         const targetElement = this.selectedElements[0];
 
+        // DEBUG: Log what we're sending to AI
+        console.log('[Visual Claude] 🔍 DEBUG - Sending AI Preview:', {
+          instruction: instruction,
+          targetElement: {
+            tag: targetElement.tagName,
+            id: targetElement.id,
+            classes: targetElement.className,
+            selector: window.VCUtils.getSelector(targetElement),
+          },
+          elementInfo: elementsInfo[0],
+        });
+
+        console.log('[Visual Claude] 🎯 Selector being sent to AI:', elementsInfo[0].selector);
+
+        // DEBUG: Log parent info
+        if (elementsInfo[0].parent) {
+          console.log('[Visual Claude] 📦 Parent:', {
+            tag: elementsInfo[0].parent.tagName,
+            classes: elementsInfo[0].parent.classes,
+            selector: elementsInfo[0].parent.selector,
+          });
+        }
+
+        // DEBUG: Log siblings
+        if (elementsInfo[0].siblings && elementsInfo[0].siblings.length > 0) {
+          console.log('[Visual Claude] 👥 Siblings (' + elementsInfo[0].siblings.length + '):',
+            elementsInfo[0].siblings.map(s => ({
+              tag: s.tagName,
+              classes: s.classes,
+            }))
+          );
+        } else {
+          console.log('[Visual Claude] ⚠️ No siblings found');
+        }
+
         // Hide input and show loading state
         this.hideInlineInput();
         this.setStatus('processing', 'Getting AI preview...');
@@ -794,6 +829,14 @@
                 applied.newValue = 'none';
                 break;
 
+              case 'insertAdjacentHTML':
+                applied.position = change.position || 'afterend';
+                applied.oldValue = '(none)';
+                element.insertAdjacentHTML(applied.position, change.value);
+                applied.newValue = change.value;
+                applied.insertedHTML = change.value;
+                break;
+
               default:
                 console.warn('[Visual Claude] Unknown change action:', change.action);
                 continue;
@@ -814,12 +857,18 @@
       // ============================================================================
 
       openTextEditor(element) {
-        if (!element) return;
+        if (!element) {
+          console.error('[Visual Claude] openTextEditor: No element provided');
+          return;
+        }
+
+        console.log('[Visual Claude] Opening text editor for:', element.tagName);
 
         this.currentEditingElement = element;
         this.removeElementHighlight();
 
         const currentText = element.innerText.trim();
+        console.log('[Visual Claude] Current text:', currentText.substring(0, 50));
 
         this.textEditorValue = currentText;
         this.textEditorPreview = `Current: "${currentText.substring(0, 100)}${currentText.length > 100 ? '...' : ''}"`;
@@ -835,8 +884,12 @@
         this.textEditorStyle = `left: ${pos.left}px; top: ${pos.top}px;`;
         this.showTextEditor = true;
 
+        console.log('[Visual Claude] Text editor opened, showTextEditor =', this.showTextEditor);
+        console.log('[Visual Claude] Text editor style:', this.textEditorStyle);
+
         this.$nextTick(() => {
-          const input = document.querySelector('.vc-text-editor-input');
+          const input = document.querySelector('.vc-text-editor textarea');
+          console.log('[Visual Claude] Text editor input found:', !!input);
           if (input) {
             input.focus();
             input.select();
@@ -1143,14 +1196,21 @@
 
       actionMenuEdit() {
         console.log('[Visual Claude] Action: Edit text');
-        if (!this.actionMenuElement) return;
+        if (!this.actionMenuElement) {
+          console.error('[Visual Claude] No element selected for editing');
+          return;
+        }
+
+        const element = this.actionMenuElement;
+        console.log('[Visual Claude] Editing element:', element.tagName, element.className);
 
         // Check if element is text-editable
-        if (window.VCUtils.isTextEditable(this.actionMenuElement)) {
+        if (window.VCUtils.isTextEditable(element)) {
+          console.log('[Visual Claude] Element is text-editable, opening text editor modal');
           this.hideActionMenu();
-          this.openTextEditor(this.actionMenuElement);
+          this.openTextEditor(element);
         } else {
-          console.warn('[Visual Claude] Element is not text-editable');
+          console.log('[Visual Claude] Element is not text-editable, falling back to AI mode');
           // Fall back to AI mode if not text-editable
           this.actionMenuAI();
         }
@@ -1192,10 +1252,15 @@
 
       actionMenuAI() {
         console.log('[Visual Claude] Action: AI instructions');
-        if (!this.actionMenuElement) return;
+        if (!this.actionMenuElement) {
+          console.error('[Visual Claude] No element selected for AI mode');
+          return;
+        }
 
         // Store element reference before hiding menu (hideActionMenu sets it to null)
         const element = this.actionMenuElement;
+        console.log('[Visual Claude] Opening AI mode for:', element.tagName, element.className);
+
         const rect = element.getBoundingClientRect();
         const bounds = {
           left: rect.left,
@@ -2771,7 +2836,7 @@
 
   // Bottom Control Bar (Pill Design) - Simplified unified mode
   app.innerHTML += `
-    <div class="vc-control-bar fixed bottom-6 right-6 z-[1000003] flex items-center bg-white border border-gray-300 rounded-full shadow-lg">
+    <div class="vc-control-bar fixed bottom-6 right-6 z-[1000003] flex items-center border border-gray-300 rounded-full shadow-lg" style="background-color: #fffefc;">
       <!-- Design Upload Button -->
       <button @click="openDesignModal()"
               title="Create from Design"
@@ -2803,7 +2868,18 @@
               x-bind:class="modeClass"
               x-bind:title="modeTitle"
               class="vc-mode-toggle flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer rounded-r-full active:scale-95">
-        <i class="text-xl" x-bind:class="isEditMode ? 'ph ph-pencil-simple' : 'ph ph-eye'"></i>
+        <template x-if="isEditMode">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 32 32" style="display: block;">
+            <g transform="rotate(-35 16 16)">
+              <path d="M 16 2 L 28 22 L 20 18 L 16 28 L 12 18 L 4 22 Z"
+                    fill="currentColor"
+                    stroke="none"/>
+            </g>
+          </svg>
+        </template>
+        <template x-if="!isEditMode">
+          <i class="ph ph-eye text-xl"></i>
+        </template>
       </button>
     </div>
   `;
@@ -2817,10 +2893,11 @@
          x-transition:leave="transition ease-in duration-150"
          x-transition:leave-start="translate-x-0"
          x-transition:leave-end="-translate-x-full"
-         class="vc-history-panel fixed left-0 top-0 bottom-0 w-96 bg-white border-r border-gray-200 shadow-xl z-[1000004] overflow-hidden flex flex-col">
+         class="vc-history-panel fixed left-0 top-0 bottom-0 w-96 border-r border-gray-200 shadow-xl z-[1000004] overflow-hidden flex flex-col"
+         style="background-color: #fffefc;">
 
       <!-- Header -->
-      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200" style="background-color: #fffefc;">
         <div class="flex items-center gap-3">
           <i class="ph ph-clock-counter-clockwise text-xl text-gray-700"></i>
           <h2 class="text-base font-semibold text-gray-900 tracking-tight">Change History</h2>
@@ -2836,7 +2913,7 @@
       </div>
 
       <!-- Actions Bar -->
-      <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-white">
+      <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-100" style="background-color: #fffefc;">
         <button @click="selectAllChanges()"
                 class="text-xs font-medium px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer transition-all">
           Select All
@@ -2864,7 +2941,7 @@
 
         <!-- Change Items -->
         <template x-for="change in changeHistory" :key="change.id">
-          <div class="vc-change-item bg-white border border-gray-200 rounded-lg p-3.5 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer">
+          <div class="vc-change-item border border-gray-200 rounded-lg p-3.5 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer" style="background-color: #fffefc;">
             <div class="flex items-start gap-3">
               <!-- Checkbox -->
               <input type="checkbox"
@@ -2900,7 +2977,7 @@
       </div>
 
       <!-- Footer Actions -->
-      <div class="border-t border-gray-200 px-4 py-4 bg-white">
+      <div class="border-t border-gray-200 px-4 py-4" style="background-color: #fffefc;">
         <div class="text-xs text-gray-500 font-medium mb-3">
           <span x-text="getSelectedChanges().length"></span> of <span x-text="changeHistory.length"></span> selected
         </div>

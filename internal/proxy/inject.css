@@ -355,7 +355,7 @@ body.vc-dragging-invalid * {
 
 .vc-action-menu {
   position: fixed;
-  background: var(--vc-white);
+  background: #fffefc;
   border: var(--vc-border-normal) solid var(--vc-gray-300);
   box-shadow: var(--vc-shadow-md);
   border-radius: var(--vc-radius-lg);

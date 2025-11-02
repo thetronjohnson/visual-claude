@@ -2,7 +2,7 @@
   <!-- Navigation arrow cursor tilted left -->
   <g transform="rotate(-35 16 16)">
     <path d="M 16 2 L 28 22 L 20 18 L 16 28 L 12 18 L 4 22 Z"
-          fill="#F19E38"
+          fill="#ffffff"
           stroke="#333333"
           stroke-width="2.5"
           stroke-linejoin="miter"/>
