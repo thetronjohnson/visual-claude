@@ -1,20 +1,64 @@
 /* Visual Claude Styles - Tailwind CSS + Custom Styles */
 
-/* CSS Custom Properties for theming */
+/* CSS Custom Properties - Notion-Style (Universal Light/Dark Compatibility) */
 :root {
-  --vc-primary: #3b82f6;
-  --vc-primary-hover: #2563eb;
-  --vc-success: #22c55e;
+  /* Primary Colors */
+  --vc-primary: #2563eb;
+  --vc-primary-hover: #1d4ed8;
+  --vc-primary-light: #eff6ff;
+  --vc-success: #10b981;
+  --vc-success-light: #d1fae5;
   --vc-danger: #ef4444;
-  --vc-orange: #F19E38;
-  --vc-gray-50: #f9fafb;
+  --vc-danger-light: #fee2e2;
+  --vc-warning: #f59e0b;
+  --vc-warning-light: #fef3c7;
+
+  /* Neutral Grays (Notion-inspired) */
+  --vc-white: #ffffff;
+  --vc-gray-50: #fafafa;
   --vc-gray-100: #f3f4f6;
   --vc-gray-200: #e5e7eb;
+  --vc-gray-300: #d1d5db;  /* Universal border color */
   --vc-gray-400: #9ca3af;
-  --vc-gray-600: #6b7280;
-  --vc-gray-700: #374151;
-  --vc-gray-900: #1f2937;
-  --vc-black: #333333;
+  --vc-gray-500: #6b7280;  /* Secondary text */
+  --vc-gray-600: #4b5563;
+  --vc-gray-700: #374151;  /* Body text */
+  --vc-gray-800: #1f2937;  /* Headings */
+  --vc-gray-900: #111827;
+
+  /* Spacing Scale (8px grid) */
+  --vc-space-xs: 8px;
+  --vc-space-sm: 12px;
+  --vc-space-md: 16px;
+  --vc-space-lg: 20px;
+  --vc-space-xl: 24px;
+  --vc-space-2xl: 32px;
+
+  /* Border Widths */
+  --vc-border-thin: 1px;
+  --vc-border-normal: 1px;  /* Notion uses 1px everywhere */
+  --vc-border-thick: 2px;   /* For emphasis only */
+
+  /* Border Radius */
+  --vc-radius-sm: 4px;
+  --vc-radius-md: 6px;
+  --vc-radius-lg: 8px;
+  --vc-radius-xl: 10px;
+
+  /* Shadows (Soft, works on light and dark) */
+  --vc-shadow-sm: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+  --vc-shadow-md: 0 4px 6px -1px rgba(0,0,0,0.15), 0 2px 4px -1px rgba(0,0,0,0.1);
+  --vc-shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.15), 0 4px 6px -2px rgba(0,0,0,0.1);
+  --vc-shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.2), 0 10px 10px -5px rgba(0,0,0,0.1);
+
+  /* Typography */
+  --vc-font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --vc-font-size-xs: 11px;
+  --vc-font-size-sm: 12px;
+  --vc-font-size-base: 14px;
+  --vc-font-size-lg: 16px;
+  --vc-line-height: 1.5;
+  --vc-letter-spacing: -0.011em; /* Inter's recommended letter spacing */
 }
 
 /* Element Hover Highlight - Lighter preview */
@@ -24,9 +68,9 @@
   transition: outline 0.15s ease !important;
 }
 
-/* Selected Element - Stronger outline */
+/* Selected Element - Stronger outline (Refined) */
 .vc-visual-edit-selected {
-  outline: 2.5px solid var(--vc-primary) !important;
+  outline: var(--vc-border-normal) solid var(--vc-primary) !important;
   outline-offset: 2px !important;
 }
 
@@ -73,12 +117,12 @@
   to { transform: rotate(360deg); }
 }
 
-/* Selection Rectangle */
+/* Selection Rectangle (Refined) */
 .vc-selection-rect {
   position: fixed;
-  border: 2px dashed var(--vc-primary);
+  border: var(--vc-border-normal) dashed var(--vc-primary);
   background: rgba(59, 130, 246, 0.08);
-  border-radius: 8px;
+  border-radius: var(--vc-radius-lg);
   pointer-events: none;
   z-index: 999999;
   display: none;
@@ -95,18 +139,18 @@
   animation: vc-fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Selection Info Tooltip */
+/* Selection Info Tooltip (Refined) */
 .vc-selection-info {
   position: fixed;
   background: rgba(59, 130, 246, 0.95);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: white;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 8px 14px; /* Increased spacing */
+  border-radius: var(--vc-radius-md);
   font-size: 12px;
   font-family: system-ui, -apple-system, sans-serif;
-  font-weight: 500;
+  font-weight: 600; /* Increased for clarity */
   pointer-events: none;
   z-index: 1000000;
   display: none;
@@ -279,13 +323,13 @@ body.vc-dragging-invalid * {
   transition: all 0.2s ease !important;
 }
 
-/* Invalid drop warning tooltip */
+/* Invalid drop warning tooltip (Refined) */
 .vc-drop-warning {
   position: fixed;
   background: var(--vc-danger);
   color: white;
-  padding: 8px 12px;
-  border-radius: 6px;
+  padding: 10px 16px; /* Increased spacing */
+  border-radius: var(--vc-radius-md);
   font-size: 12px;
   font-weight: 600;
   font-family: system-ui, -apple-system, sans-serif;
@@ -298,67 +342,66 @@ body.vc-dragging-invalid * {
 
 .vc-drop-warning::before {
   content: '⚠️ ';
-  margin-right: 4px;
+  margin-right: 6px; /* Slightly more space */
 }
 
 /* ============================================================================
-   ACTION MENU - Contextual menu for selected elements
+   ACTION MENU - Contextual menu for selected elements (NOTION STYLE)
    ============================================================================ */
 
 .vc-action-menu {
   position: fixed;
-  background: white;
-  border: 2.5px solid var(--vc-black);
-  box-shadow: 4px 4px 0 var(--vc-black);
-  border-radius: 0;
+  background: var(--vc-white);
+  border: var(--vc-border-normal) solid var(--vc-gray-300);
+  box-shadow: var(--vc-shadow-md);
+  border-radius: var(--vc-radius-lg);
   display: none;
   z-index: 1000001;
-  padding: 0;
+  padding: 4px;
   animation: vc-fadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
 }
 
 .vc-action-menu.vc-show {
   display: flex;
-  gap: 0;
+  gap: 4px;
 }
 
 .vc-action-menu-btn {
-  padding: 10px 16px;
+  padding: 8px 14px;
   border: none;
-  background: white;
-  color: var(--vc-black);
-  font-size: 14px;
-  font-weight: 600;
-  font-family: system-ui, -apple-system, sans-serif;
+  background: transparent;
+  color: var(--vc-gray-700);
+  font-size: var(--vc-font-size-sm);
+  font-weight: 500;
+  font-family: var(--vc-font-family);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.1s ease;
-  border-right: 2.5px solid var(--vc-black);
-}
-
-.vc-action-menu-btn:last-child {
-  border-right: none;
+  transition: all 0.15s ease;
+  border-radius: var(--vc-radius-sm);
+  white-space: nowrap;
 }
 
 .vc-action-menu-btn:hover {
-  background: var(--vc-orange);
-  color: white;
-  transform: translateY(-1px);
+  background: var(--vc-gray-100);
+  color: var(--vc-gray-900);
 }
 
 .vc-action-menu-btn:active {
-  transform: translateY(0);
+  background: var(--vc-gray-200);
+  transform: scale(0.98);
 }
 
 .vc-action-menu-icon {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
+  opacity: 0.8;
 }
 
 .vc-action-menu-label {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: var(--vc-font-size-sm);
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }

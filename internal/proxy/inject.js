@@ -2488,22 +2488,22 @@
   app.innerHTML += `
     <div x-show="showInlineInput"
          x-bind:style="inlineInputStyle"
-         class="vc-inline-input vc-show bg-white border-[2.5px] border-[#333] rounded-lg p-3 fixed z-[1000000] min-w-[300px] max-w-[400px]">
+         class="vc-inline-input vc-show bg-white border border-gray-300 rounded-lg p-4 fixed z-[1000000] min-w-[300px] max-w-[400px] shadow-lg">
       <div x-text="inlineInputBadge"
-           class="text-xs font-semibold text-[#333] mb-2 font-sans"></div>
+           class="text-xs font-semibold text-gray-700 mb-2 font-sans"></div>
       <textarea x-model="inlineInputText"
                 @keydown.enter.prevent="!$event.shiftKey && sendInlineMessage()"
                 @keydown.escape.prevent="hideInlineInput()"
                 rows="2"
                 placeholder="What would you like Visual Claude to do?"
-                class="w-full p-2.5 border-2 border-[#333] rounded-md text-sm font-sans leading-snug resize-none focus:outline-none focus:border-[#333]"></textarea>
-      <div class="flex gap-2 mt-2 justify-end">
+                class="w-full p-2.5 border border-gray-300 rounded-md text-sm font-sans leading-snug resize-none focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"></textarea>
+      <div class="flex gap-2 mt-3 justify-end">
         <button @click="hideInlineInput()"
-                class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-200 ease font-sans bg-gray-200 text-[#333] border-[2.5px] border-[#333] hover:opacity-85 active:scale-95">
+                class="px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-all duration-200 ease font-sans bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-98">
           Cancel
         </button>
         <button @click="sendInlineMessage()"
-                class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-200 ease font-sans bg-[#F19E38] text-black border-[2.5px] border-[#333] hover:opacity-85 active:scale-95">
+                class="px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-all duration-200 ease font-sans bg-blue-600 text-white hover:bg-blue-700 active:scale-98">
           Send
         </button>
       </div>
@@ -2514,25 +2514,25 @@
   app.innerHTML += `
     <div x-show="showTextEditor"
          x-bind:style="textEditorStyle"
-         class="vc-text-editor vc-show bg-white border-[2.5px] border-[#333] rounded-lg p-3.5 fixed z-[1000002] min-w-[320px] max-w-[500px] shadow-lg">
+         class="vc-text-editor vc-show bg-white border border-gray-300 rounded-lg p-4 fixed z-[1000002] min-w-[320px] max-w-[500px] shadow-lg">
       <div x-text="textEditorLabel"
-           class="text-[11px] font-semibold text-[#666] mb-2 font-sans uppercase tracking-wide"></div>
+           class="text-xs font-semibold text-gray-500 mb-2 font-sans uppercase tracking-wide"></div>
       <textarea x-model="textEditorValue"
                 @keydown.enter.meta.prevent="saveTextEdit()"
                 @keydown.enter.ctrl.prevent="saveTextEdit()"
                 @keydown.escape.prevent="hideTextEditor()"
                 rows="3"
                 placeholder="Enter new text..."
-                class="w-full p-2.5 px-3 border-2 border-[#333] rounded-md text-sm font-sans leading-normal resize-y min-h-[70px] box-border focus:outline-none focus:border-[#F19E38] focus:shadow-[0_0_0_3px_rgba(241,158,56,0.1)]"></textarea>
+                class="w-full p-2.5 px-3 border border-gray-300 rounded-md text-sm font-sans leading-normal resize-y min-h-[70px] box-border focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"></textarea>
       <div x-text="textEditorPreview"
-           class="text-[11px] text-[#666] mt-2 p-2 px-2.5 bg-gray-50 rounded font-mono max-h-20 overflow-y-auto break-words"></div>
-      <div class="flex gap-2 mt-2.5 justify-end">
+           class="text-xs text-gray-500 mt-2 p-2 px-2.5 bg-gray-50 rounded font-mono max-h-20 overflow-y-auto break-words"></div>
+      <div class="flex gap-2 mt-3 justify-end">
         <button @click="hideTextEditor()"
-                class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-200 ease font-sans bg-gray-200 text-[#333] border-[2.5px] border-[#333] hover:opacity-85 active:scale-95">
+                class="px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-all duration-200 ease font-sans bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-98">
           Cancel
         </button>
         <button @click="saveTextEdit()"
-                class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-200 ease font-sans bg-[#F19E38] text-black border-[2.5px] border-[#333] hover:opacity-85 active:scale-95">
+                class="px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-all duration-200 ease font-sans bg-blue-600 text-white hover:bg-blue-700 active:scale-98">
           Save
         </button>
       </div>
@@ -2545,7 +2545,7 @@
          x-bind:class="statusClass"
          x-html="statusText"
          x-transition
-         class="vc-status-indicator fixed bottom-6 left-6 px-5 py-3 rounded-lg bg-white text-gray-900 border-[2.5px] border-[#333] text-sm font-semibold font-sans z-[1000000] flex items-center gap-2 shadow-lg transition-all duration-200 ease">
+         class="vc-status-indicator fixed bottom-6 left-6 px-5 py-3 rounded-lg bg-white text-gray-700 border border-gray-300 text-sm font-medium font-sans z-[1000000] flex items-center gap-2 shadow-lg transition-all duration-200 ease">
     </div>
   `;
 
@@ -2557,16 +2557,14 @@
          style="background: rgba(0, 0, 0, 0.5);">
 
       <div @click.away="closeDesignModal()"
-           class="bg-white border-[2.5px] border-[#333] rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
+           class="bg-white border border-gray-300 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl">
 
         <!-- Header -->
-        <div class="flex items-center justify-between p-4 border-b-[2.5px] border-[#333] bg-[#F19E38]">
-          <h2 class="text-lg font-bold text-black font-sans">Create Component from Design</h2>
+        <div class="flex items-center justify-between p-5 border-b border-gray-200 bg-gray-50">
+          <h2 class="text-lg font-semibold text-gray-900 font-sans">Create Component from Design</h2>
           <button @click="closeDesignModal()"
-                  class="w-8 h-8 flex items-center justify-center rounded-md border-[2.5px] border-[#333] bg-white hover:bg-gray-100 transition-colors">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
+                  class="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-200 transition-colors">
+            <i class="ph ph-x text-lg"></i>
           </button>
         </div>
 
@@ -2575,23 +2573,21 @@
 
           <!-- Upload Zone -->
           <div x-show="!imagePreview">
-            <label class="block text-sm font-semibold text-[#333] mb-2 font-sans">Upload Design Image</label>
+            <label class="block text-sm font-semibold text-gray-700 mb-2 font-sans">Upload Design Image</label>
             <div @drop="handleImageDrop($event)"
                  @dragover.prevent
                  @dragenter.prevent
-                 class="border-2 border-dashed border-[#333] rounded-lg p-12 text-center cursor-pointer hover:bg-gray-50 transition-colors">
+                 class="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center cursor-pointer hover:bg-gray-50 hover:border-gray-400 transition-colors">
               <input type="file"
                      accept="image/*"
                      @change="processImage($event.target.files[0])"
                      class="hidden"
                      id="vc-design-upload">
-              <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-              </svg>
-              <p class="text-lg font-semibold text-[#333] mb-2">Drop your design here</p>
+              <i class="ph ph-image text-6xl text-gray-400 mb-4"></i>
+              <p class="text-lg font-medium text-gray-700 mb-2">Drop your design here</p>
               <p class="text-sm text-gray-500 mb-4">or</p>
               <label for="vc-design-upload"
-                     class="inline-block px-4 py-2 rounded-md text-sm font-semibold cursor-pointer bg-[#F19E38] text-black border-[2.5px] border-[#333] hover:opacity-85 transition-opacity">
+                     class="inline-block px-4 py-2 rounded-md text-sm font-medium cursor-pointer bg-blue-600 text-white hover:bg-blue-700 transition-colors">
                 Browse Files
               </label>
               <p class="text-xs text-gray-400 mt-4">You can also paste (Cmd+V) an image</p>
@@ -2601,13 +2597,13 @@
           <!-- Image Preview -->
           <div x-show="imagePreview" class="space-y-4">
             <div class="flex items-center justify-between">
-              <label class="block text-sm font-semibold text-[#333] font-sans">Design Preview</label>
+              <label class="block text-sm font-semibold text-gray-700 font-sans">Design Preview</label>
               <button @click="imagePreview = ''; uploadedImage = null"
-                      class="text-xs text-red-600 hover:text-red-700 font-semibold">
+                      class="text-xs text-red-600 hover:text-red-700 font-medium">
                 Remove Image
               </button>
             </div>
-            <div class="border-[2.5px] border-[#333] rounded-lg overflow-hidden">
+            <div class="border border-gray-300 rounded-lg overflow-hidden">
               <img x-bind:src="imagePreview" alt="Design preview" class="w-full h-auto">
             </div>
           </div>
@@ -2615,36 +2611,36 @@
           <!-- Prompt Input -->
           <div x-show="imagePreview && !isAnalyzing" class="space-y-4">
             <div>
-              <label class="block text-sm font-semibold text-[#333] mb-2 font-sans">What would you like to do with this design?</label>
+              <label class="block text-sm font-semibold text-gray-700 mb-2 font-sans">What would you like to do with this design?</label>
               <textarea x-model="designPrompt"
                         @keydown.enter.meta.prevent="analyzeAndExecute()"
                         @keydown.enter.ctrl.prevent="analyzeAndExecute()"
                         rows="4"
                         placeholder="Example: Create a new Card component based on this design&#10;Or: Update the existing Button component to match this style&#10;Or: Implement this navigation bar design"
-                        class="w-full p-3 border-[2.5px] border-[#333] rounded-md text-sm font-sans leading-normal resize-y focus:outline-none focus:border-[#F19E38] focus:shadow-[0_0_0_3px_rgba(241,158,56,0.1)]"></textarea>
+                        class="w-full p-3 border border-gray-300 rounded-md text-sm font-sans leading-normal resize-y focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"></textarea>
               <p class="text-xs text-gray-500 mt-2">
                 Claude will analyze the design and work with Claude Code to implement your request
               </p>
             </div>
 
             <div x-show="analysisError"
-                 class="p-3 border-[2.5px] border-red-500 bg-red-50 rounded-md">
-              <p class="text-sm text-red-700 font-semibold" x-text="analysisError"></p>
+                 class="p-3 border border-red-300 bg-red-50 rounded-md">
+              <p class="text-sm text-red-700 font-medium" x-text="analysisError"></p>
             </div>
 
             <button @click="analyzeAndExecute()"
                     x-bind:disabled="!designPrompt.trim()"
-                    class="w-full px-4 py-3 rounded-md text-sm font-semibold cursor-pointer bg-[#F19E38] text-black border-[2.5px] border-[#333] hover:opacity-85 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity">
+                    class="w-full px-4 py-3 rounded-md text-sm font-medium cursor-pointer bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
               Analyze & Execute
             </button>
           </div>
 
           <!-- Progress Indicator -->
           <div x-show="imagePreview && isAnalyzing" class="space-y-4">
-            <div class="p-6 border-[2.5px] border-[#F19E38] bg-orange-50 rounded-lg">
+            <div class="p-6 border border-blue-300 bg-blue-50 rounded-lg">
               <div class="flex items-center gap-3 mb-3">
                 <span class="vc-spinner"></span>
-                <span class="text-sm font-semibold text-[#333]">
+                <span class="text-sm font-medium text-gray-700">
                   <span x-show="analysisStep === 'analyzing'">Analyzing design with Claude Vision...</span>
                 </span>
               </div>
@@ -2670,9 +2666,7 @@
       <div class="absolute -inset-2"></div>
       <!-- Visible handle -->
       <div class="relative w-6 h-6 rounded-full bg-[#3b82f6] border-2 border-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform">
-        <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/>
-        </svg>
+        <i class="ph ph-arrows-out-cardinal text-white text-sm"></i>
       </div>
     </div>
   `;
@@ -2684,27 +2678,27 @@
          class="vc-drag-handles fixed z-[1000002] pointer-events-none">
       <!-- Center Drag Handle -->
       <div @mousedown="startDrag($event, 'move')"
-           class="absolute top-0 left-0 w-full h-full cursor-move pointer-events-auto border-2 border-[#8B5CF6] bg-[#8B5CF6] bg-opacity-5"></div>
+           class="absolute top-0 left-0 w-full h-full cursor-move pointer-events-auto border-2 border-blue-500 bg-blue-500 bg-opacity-5"></div>
 
       <!-- Corner Resize Handles -->
       <div @mousedown="startDrag($event, 'nw')"
-           class="absolute -top-1 -left-1 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-nw-resize pointer-events-auto shadow-md"></div>
+           class="absolute -top-1 -left-1 w-3 h-3 bg-blue-600 border-2 border-white rounded-full cursor-nw-resize pointer-events-auto shadow-md"></div>
       <div @mousedown="startDrag($event, 'ne')"
-           class="absolute -top-1 -right-1 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-ne-resize pointer-events-auto shadow-md"></div>
+           class="absolute -top-1 -right-1 w-3 h-3 bg-blue-600 border-2 border-white rounded-full cursor-ne-resize pointer-events-auto shadow-md"></div>
       <div @mousedown="startDrag($event, 'sw')"
-           class="absolute -bottom-1 -left-1 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-sw-resize pointer-events-auto shadow-md"></div>
+           class="absolute -bottom-1 -left-1 w-3 h-3 bg-blue-600 border-2 border-white rounded-full cursor-sw-resize pointer-events-auto shadow-md"></div>
       <div @mousedown="startDrag($event, 'se')"
-           class="absolute -bottom-1 -right-1 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-se-resize pointer-events-auto shadow-md"></div>
+           class="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-600 border-2 border-white rounded-full cursor-se-resize pointer-events-auto shadow-md"></div>
 
       <!-- Edge Resize Handles -->
       <div @mousedown="startDrag($event, 'n')"
-           class="absolute -top-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-n-resize pointer-events-auto shadow-md"></div>
+           class="absolute -top-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-blue-600 border-2 border-white rounded-full cursor-n-resize pointer-events-auto shadow-md"></div>
       <div @mousedown="startDrag($event, 's')"
-           class="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-s-resize pointer-events-auto shadow-md"></div>
+           class="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-blue-600 border-2 border-white rounded-full cursor-s-resize pointer-events-auto shadow-md"></div>
       <div @mousedown="startDrag($event, 'w')"
-           class="absolute top-1/2 -left-1 transform -translate-y-1/2 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-w-resize pointer-events-auto shadow-md"></div>
+           class="absolute top-1/2 -left-1 transform -translate-y-1/2 w-3 h-3 bg-blue-600 border-2 border-white rounded-full cursor-w-resize pointer-events-auto shadow-md"></div>
       <div @mousedown="startDrag($event, 'e')"
-           class="absolute top-1/2 -right-1 transform -translate-y-1/2 w-3 h-3 bg-[#8B5CF6] border-2 border-white rounded-full cursor-e-resize pointer-events-auto shadow-md"></div>
+           class="absolute top-1/2 -right-1 transform -translate-y-1/2 w-3 h-3 bg-blue-600 border-2 border-white rounded-full cursor-e-resize pointer-events-auto shadow-md"></div>
     </div>
   `;
 
@@ -2717,14 +2711,14 @@
       <!-- Edit Text Button -->
       <button @click="actionMenuEdit()"
               class="vc-action-menu-btn">
-        <span class="vc-action-menu-icon">✏️</span>
+        <i class="ph ph-pencil-simple vc-action-menu-icon"></i>
         <span class="vc-action-menu-label">Edit</span>
       </button>
 
       <!-- AI Instructions Button -->
       <button @click="actionMenuAI()"
               class="vc-action-menu-btn">
-        <span class="vc-action-menu-icon">🎨</span>
+        <i class="ph ph-sparkle vc-action-menu-icon"></i>
         <span class="vc-action-menu-label">AI</span>
       </button>
     </div>
@@ -2732,27 +2726,23 @@
 
   // Bottom Control Bar (Pill Design) - Simplified unified mode
   app.innerHTML += `
-    <div class="vc-control-bar fixed bottom-6 right-6 z-[1000003] flex items-center bg-white border-[2.5px] border-[#333] rounded-full shadow-lg">
+    <div class="vc-control-bar fixed bottom-6 right-6 z-[1000003] flex items-center bg-white border border-gray-300 rounded-full shadow-lg">
       <!-- Design Upload Button -->
       <button @click="openDesignModal()"
               title="Create from Design"
-              class="flex items-center justify-center w-12 h-12 text-[#333] outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 rounded-l-full active:scale-95">
-        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
-        </svg>
+              class="flex items-center justify-center w-12 h-12 text-gray-700 outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 rounded-l-full active:scale-95">
+        <i class="ph ph-image text-xl"></i>
       </button>
 
       <!-- Divider -->
-      <div class="w-[2.5px] h-8 bg-[#333]"></div>
+      <div class="w-px h-8 bg-gray-300"></div>
 
       <!-- History Panel Button -->
       <button @click="toggleHistoryPanel()"
-              x-bind:class="{'bg-[#F19E38] text-black': showHistoryPanel, 'bg-transparent text-[#333]': !showHistoryPanel}"
+              x-bind:class="{'bg-blue-600 text-white': showHistoryPanel, 'bg-transparent text-gray-700': !showHistoryPanel}"
               title="Change History (Cmd+Shift+H)"
               class="flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer hover:bg-gray-100 active:scale-95 relative">
-        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
-        </svg>
+        <i class="ph ph-clock-counter-clockwise text-xl"></i>
         <!-- Change count badge -->
         <span x-show="changeHistory.length > 0"
               x-text="changeHistory.length"
@@ -2761,16 +2751,14 @@
       </button>
 
       <!-- Divider -->
-      <div class="w-[2.5px] h-8 bg-[#333]"></div>
+      <div class="w-px h-8 bg-gray-300"></div>
 
       <!-- Edit/View Mode Toggle Button -->
       <button @click="toggleMode()"
               x-bind:class="modeClass"
               x-bind:title="modeTitle"
               class="vc-mode-toggle flex items-center justify-center w-12 h-12 outline-none transition-all duration-200 ease cursor-pointer rounded-r-full active:scale-95">
-        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path x-bind:d="modeIcon"></path>
-        </svg>
+        <i class="text-xl" x-bind:class="isEditMode ? 'ph ph-pencil-simple' : 'ph ph-eye'"></i>
       </button>
     </div>
   `;
@@ -2784,66 +2772,46 @@
          x-transition:leave="transition ease-in duration-150"
          x-transition:leave-start="translate-x-0"
          x-transition:leave-end="-translate-x-full"
-         class="vc-history-panel fixed left-0 top-0 bottom-0 w-96 bg-white border-r-[2.5px] border-[#333] shadow-2xl z-[1000004] overflow-hidden flex flex-col">
+         class="vc-history-panel fixed left-0 top-0 bottom-0 w-96 bg-white border-r border-gray-200 shadow-xl z-[1000004] overflow-hidden flex flex-col">
 
       <!-- Header -->
-      <div class="flex items-center justify-between p-4 border-b-[2.5px] border-[#333] bg-gray-50">
-        <div class="flex items-center gap-2">
-          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
-          </svg>
-          <h2 class="text-lg font-bold text-[#333]">Change History</h2>
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div class="flex items-center gap-3">
+          <i class="ph ph-clock-counter-clockwise text-xl text-gray-700"></i>
+          <h2 class="text-base font-semibold text-gray-900 tracking-tight">Change History</h2>
           <span x-show="changeHistory.length > 0"
                 x-text="changeHistory.length"
-                class="bg-[#F19E38] text-black text-xs font-bold px-2 py-0.5 rounded-full">
+                class="bg-blue-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full min-w-[20px] text-center">
           </span>
         </div>
         <button @click="toggleHistoryPanel()"
-                class="text-gray-600 hover:text-black cursor-pointer transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
+                class="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 cursor-pointer transition-all">
+          <i class="ph ph-x text-lg"></i>
         </button>
       </div>
 
       <!-- Actions Bar -->
-      <div class="flex items-center gap-2 p-3 border-b-[2.5px] border-[#333] bg-gray-50">
+      <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-white">
         <button @click="selectAllChanges()"
-                class="text-xs font-semibold px-3 py-1.5 bg-white border-[2.5px] border-[#333] rounded cursor-pointer hover:bg-gray-100 active:scale-95 transition-all">
+                class="text-xs font-medium px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer transition-all">
           Select All
         </button>
         <button @click="deselectAllChanges()"
-                class="text-xs font-semibold px-3 py-1.5 bg-white border-[2.5px] border-[#333] rounded cursor-pointer hover:bg-gray-100 active:scale-95 transition-all">
+                class="text-xs font-medium px-3 py-1.5 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer transition-all">
           Deselect All
         </button>
         <button @click="clearHistory()"
-                class="text-xs font-semibold px-3 py-1.5 bg-red-500 text-white border-[2.5px] border-[#333] rounded cursor-pointer hover:opacity-85 active:scale-95 transition-all ml-auto">
+                class="text-xs font-medium px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-md cursor-pointer transition-all ml-auto">
           Clear All
         </button>
       </div>
 
-      <!-- Token Estimate (Phase 3) -->
-      <div x-show="changeHistory.length > 0"
-           class="flex items-center gap-2 p-3 bg-blue-50 border-b-[2.5px] border-[#333]">
-        <svg class="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-        </svg>
-        <span class="text-xs text-blue-800">
-          Estimated tokens: <strong x-text="estimateTotalTokens(changeHistory)"></strong>
-          <template x-if="estimateTotalTokens(changeHistory) > 6000">
-            <span class="text-orange-600 font-semibold"> (will batch)</span>
-          </template>
-        </span>
-      </div>
-
       <!-- Change List -->
-      <div class="flex-1 overflow-y-auto p-3 space-y-2">
+      <div class="flex-1 overflow-y-auto px-3 py-3 space-y-2">
         <!-- Empty State -->
         <template x-if="changeHistory.length === 0">
           <div class="flex flex-col items-center justify-center h-full text-center p-8">
-            <svg class="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-            </svg>
+            <i class="ph ph-note-blank text-6xl text-gray-300 mb-4"></i>
             <p class="text-gray-500 font-medium">No changes yet</p>
             <p class="text-gray-400 text-sm mt-1">Start editing to see changes here</p>
           </div>
@@ -2851,42 +2819,35 @@
 
         <!-- Change Items -->
         <template x-for="change in changeHistory" :key="change.id">
-          <div class="vc-change-item bg-white border-[2.5px] border-[#333] rounded-lg p-3 hover:shadow-md transition-shadow">
+          <div class="vc-change-item bg-white border border-gray-200 rounded-lg p-3.5 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer">
             <div class="flex items-start gap-3">
               <!-- Checkbox -->
               <input type="checkbox"
                      x-model="change.selected"
-                     class="mt-1 w-4 h-4 cursor-pointer accent-[#F19E38]">
+                     class="mt-0.5 w-4 h-4 cursor-pointer accent-blue-600 rounded">
 
               <!-- Content -->
               <div class="flex-1 min-w-0">
                 <!-- Type Badge and Timestamp -->
                 <div class="flex items-center gap-2 mb-2">
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase"
+                  <span class="text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wide"
                         x-bind:style="'background-color: ' + getChangeTypeBadge(change.type).color + '; color: white;'"
                         x-text="getChangeTypeBadge(change.type).text">
                   </span>
-                  <span class="text-xs text-gray-500" x-text="formatTimestamp(change.timestamp)"></span>
+                  <span class="text-[11px] text-gray-500 font-medium" x-text="formatTimestamp(change.timestamp)"></span>
                 </div>
 
                 <!-- Element Selector -->
-                <div class="text-xs font-mono text-gray-700 mb-1 truncate" x-text="change.selector"></div>
+                <div class="text-xs font-mono text-gray-600 mb-1.5 truncate bg-gray-50 px-2 py-0.5 rounded" x-text="change.selector"></div>
 
                 <!-- Preview -->
-                <div class="text-sm text-gray-600" x-text="change.preview"></div>
-
-                <!-- Token Estimate -->
-                <div class="text-[10px] text-gray-400 mt-1">
-                  ~<span x-text="estimateTokens(change)"></span> tokens
-                </div>
+                <div class="text-sm text-gray-700 leading-relaxed" x-text="change.preview"></div>
               </div>
 
               <!-- Delete Button -->
               <button @click="removeFromHistory(change.id)"
-                      class="text-gray-400 hover:text-red-600 cursor-pointer transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
+                      class="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer transition-all">
+                <i class="ph ph-x text-sm"></i>
               </button>
             </div>
           </div>
@@ -2894,22 +2855,24 @@
       </div>
 
       <!-- Footer Actions -->
-      <div class="border-t-[2.5px] border-[#333] p-4 bg-gray-50 space-y-2">
-        <div class="text-xs text-gray-600 mb-2">
+      <div class="border-t border-gray-200 px-4 py-4 bg-white">
+        <div class="text-xs text-gray-500 font-medium mb-3">
           <span x-text="getSelectedChanges().length"></span> of <span x-text="changeHistory.length"></span> selected
         </div>
-        <button @click="commitSelectedChanges()"
-                x-bind:disabled="getSelectedChanges().length === 0"
-                x-bind:class="getSelectedChanges().length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-85 active:scale-95'"
-                class="w-full px-4 py-2.5 bg-green-500 text-white font-bold border-[2.5px] border-[#333] rounded-lg cursor-pointer transition-all">
-          Commit Selected
-        </button>
-        <button @click="commitAllChanges()"
-                x-bind:disabled="changeHistory.length === 0"
-                x-bind:class="changeHistory.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-85 active:scale-95'"
-                class="w-full px-4 py-2.5 bg-[#F19E38] text-black font-bold border-[2.5px] border-[#333] rounded-lg cursor-pointer transition-all">
-          Commit All Changes
-        </button>
+        <div class="flex gap-2">
+          <button @click="commitSelectedChanges()"
+                  x-bind:disabled="getSelectedChanges().length === 0"
+                  x-bind:class="getSelectedChanges().length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-50 active:scale-[0.98]'"
+                  class="flex-1 px-3 py-2.5 bg-white border border-blue-600 text-blue-600 text-sm font-semibold rounded-lg cursor-pointer transition-all">
+            Commit Selected
+          </button>
+          <button @click="commitAllChanges()"
+                  x-bind:disabled="changeHistory.length === 0"
+                  x-bind:class="changeHistory.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700 active:scale-[0.98]'"
+                  class="flex-1 px-3 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg cursor-pointer transition-all shadow-sm">
+            Commit All
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -2917,22 +2880,44 @@
   // Add Tailwind utility classes for status indicator and control bar states
   const style = document.createElement('style');
   style.textContent = `
+    /* Global Inter Font for all VC UI */
+    .vc-inline-input,
+    .vc-inline-input *,
+    .vc-text-editor,
+    .vc-text-editor *,
+    .vc-status-indicator,
+    .vc-status-indicator *,
+    .vc-design-modal,
+    .vc-design-modal *,
+    .vc-control-bar,
+    .vc-control-bar *,
+    .vc-history-panel,
+    .vc-history-panel *,
+    .vc-action-menu,
+    .vc-action-menu *,
+    .vc-selection-info,
+    .vc-drop-warning {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif !important;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
     .vc-status-indicator.vc-processing {
-      background: #F19E38 !important;
-      color: #000000 !important;
-      border-color: #333333 !important;
+      background: #2563eb !important;
+      color: #ffffff !important;
+      border-color: #d1d5db !important;
     }
 
     .vc-status-indicator.vc-complete {
       background: #22c55e !important;
       color: white !important;
-      border-color: #333333 !important;
+      border-color: #d1d5db !important;
       animation: vc-fadeOut 0.5s ease 2s forwards !important;
     }
 
     .vc-mode-toggle.vc-edit-mode {
-      background: #F19E38 !important;
-      color: #000000 !important;
+      background: #2563eb !important;
+      color: #ffffff !important;
     }
 
     .vc-mode-toggle.vc-view-mode {
@@ -2941,7 +2926,7 @@
     }
 
     .vc-mode-toggle.vc-edit-mode:hover {
-      opacity: 0.9 !important;
+      background: #1d4ed8 !important;
     }
 
     .vc-mode-toggle.vc-view-mode:hover {
@@ -2950,11 +2935,23 @@
 
     /* Visual Edit Mode Styles */
     .vc-visual-edit-selected {
-      outline: 2px solid #8B5CF6 !important;
+      outline: 2px solid #2563eb !important;
       outline-offset: 2px !important;
     }
   `;
   document.head.appendChild(style);
+
+  // Load Phosphor Icons (Notion-style iconography)
+  const phosphorLink = document.createElement('link');
+  phosphorLink.rel = 'stylesheet';
+  phosphorLink.href = 'https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css';
+  document.head.appendChild(phosphorLink);
+
+  // Load Inter Font (Notion-style typography)
+  const interLink = document.createElement('link');
+  interLink.rel = 'stylesheet';
+  interLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+  document.head.appendChild(interLink);
 
   // Append to body
   document.body.appendChild(app);
