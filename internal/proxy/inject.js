@@ -56,6 +56,7 @@
 
       // Design Upload State
       uploadedImage: null,
+      uploadedImageType: '', // 'image/jpeg', 'image/png', etc.
       imagePreview: '',
       designPrompt: '',
       isAnalyzing: false,
@@ -960,6 +961,7 @@
 
         // Clean up
         this.uploadedImage = null;
+        this.uploadedImageType = '';
         this.imagePreview = '';
         this.designPrompt = '';
         this.isAnalyzing = false;
@@ -1001,12 +1003,15 @@
       async processImage(file) {
         console.log('[Visual Claude] Processing image:', file.name);
 
+        // Store the file type
+        this.uploadedImageType = file.type; // e.g., "image/jpeg", "image/png"
+
         // Create preview
         const reader = new FileReader();
         reader.onload = (e) => {
           this.imagePreview = e.target.result;
           this.uploadedImage = e.target.result.split(',')[1]; // Base64 without prefix
-          console.log('[Visual Claude] ✓ Image processed');
+          console.log('[Visual Claude] ✓ Image processed, type:', this.uploadedImageType);
         };
         reader.readAsDataURL(file);
       },
@@ -1024,16 +1029,17 @@
         const message = {
           type: 'analyze-design',
           image: this.uploadedImage,
+          imageType: this.uploadedImageType || 'image/png', // Default to PNG if type unknown
           prompt: this.designPrompt.trim(),
         };
 
-        console.log('[Visual Claude] Sending design to Claude Vision...');
+        console.log('[Visual Claude] Sending design for analysis...');
 
         if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
           this.messageWs.send(JSON.stringify(message));
         } else {
-          console.error('[Visual Claude] ✗ WebSocket not connected');
-          this.analysisError = 'WebSocket not connected';
+          console.error('[Visual Claude] ✗ Connection error');
+          this.analysisError = 'Connection error. Please try again.';
           this.isAnalyzing = false;
           this.analysisStep = '';
         }
@@ -1045,13 +1051,17 @@
           this.currentDesignMessageId = data.id;
           this.analysisStep = 'analyzing';
         } else if (data.status === 'complete') {
-          console.log('[Visual Claude] Design analysis complete, implementation starting...');
-          // Close modal and show status indicator
-          this.closeDesignModal();
-          this.setStatus('processing');
+          console.log('[Visual Claude] Component generation complete!');
+          // Keep modal open and show completion
+          this.analysisStep = 'complete';
+
+          // Auto-close after 1.5 seconds to show success
+          setTimeout(() => {
+            this.closeDesignModal();
+          }, 1500);
         } else if (data.status === 'error') {
           console.error('[Visual Claude] Design error:', data.error);
-          this.analysisError = data.error || 'An error occurred';
+          this.analysisError = data.error || 'An error occurred. Please try again.';
           this.isAnalyzing = false;
           this.analysisStep = '';
         }
@@ -2729,7 +2739,7 @@
                         placeholder="Example: Create a new Card component based on this design&#10;Or: Update the existing Button component to match this style&#10;Or: Implement this navigation bar design"
                         class="w-full p-3 border border-gray-300 rounded-md text-sm font-sans leading-normal resize-y focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"></textarea>
               <p class="text-xs text-gray-500 mt-2">
-                Claude will analyze the design and work with Claude Code to implement your request
+                AI will analyze the design and generate the component for you
               </p>
             </div>
 
@@ -2741,22 +2751,65 @@
             <button @click="analyzeAndExecute()"
                     x-bind:disabled="!designPrompt.trim()"
                     class="w-full px-4 py-3 rounded-md text-sm font-medium cursor-pointer bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-              Analyze & Execute
+              Create Component
             </button>
           </div>
 
           <!-- Progress Indicator -->
           <div x-show="imagePreview && isAnalyzing" class="space-y-4">
-            <div class="p-6 border border-blue-300 bg-blue-50 rounded-lg">
-              <div class="flex items-center gap-3 mb-3">
-                <span class="vc-spinner"></span>
-                <span class="text-sm font-medium text-gray-700">
-                  <span x-show="analysisStep === 'analyzing'">Analyzing design with Claude Vision...</span>
-                </span>
+            <div class="p-6 border border-blue-200 bg-blue-50 rounded-lg space-y-4">
+
+              <!-- Progress Steps -->
+              <div class="space-y-3">
+                <!-- Step 1: Analyzing Design -->
+                <div class="flex items-start gap-3">
+                  <div class="mt-0.5">
+                    <span x-show="analysisStep === 'analyzing'" class="vc-spinner w-4 h-4"></span>
+                    <span x-show="analysisStep !== 'analyzing'" class="flex items-center justify-center w-4 h-4 rounded-full bg-green-500">
+                      <i class="ph ph-check text-white text-xs"></i>
+                    </span>
+                  </div>
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-gray-800">
+                      <span x-show="analysisStep === 'analyzing'">Analyzing design...</span>
+                      <span x-show="analysisStep !== 'analyzing'">Design analyzed</span>
+                    </p>
+                    <p class="text-xs text-gray-600 mt-0.5">Understanding visual elements, layout, and styling</p>
+                  </div>
+                </div>
+
+                <!-- Step 2: Generating Code -->
+                <div class="flex items-start gap-3" x-show="analysisStep !== 'analyzing'">
+                  <div class="mt-0.5">
+                    <span x-show="analysisStep !== 'complete'" class="vc-spinner w-4 h-4"></span>
+                    <span x-show="analysisStep === 'complete'" class="flex items-center justify-center w-4 h-4 rounded-full bg-green-500">
+                      <i class="ph ph-check text-white text-xs"></i>
+                    </span>
+                  </div>
+                  <div class="flex-1">
+                    <p class="text-sm font-medium text-gray-800">
+                      <span x-show="analysisStep !== 'complete'">Generating component...</span>
+                      <span x-show="analysisStep === 'complete'">Component created</span>
+                    </p>
+                    <p class="text-xs text-gray-600 mt-0.5">Writing code and applying styles</p>
+                  </div>
+                </div>
               </div>
-              <p class="text-xs text-gray-600">
-                Claude is examining the design and understanding the visual elements, layout, colors, and styling.
-              </p>
+
+              <!-- Progress Bar -->
+              <div class="w-full bg-blue-100 rounded-full h-1.5 overflow-hidden">
+                <div class="bg-blue-600 h-full rounded-full transition-all duration-500 ease-out"
+                     x-bind:style="'width: ' + (analysisStep === 'analyzing' ? '50' : analysisStep === 'complete' ? '100' : '75') + '%'">
+                </div>
+              </div>
+
+              <!-- Success Message -->
+              <div x-show="analysisStep === 'complete'"
+                   x-transition
+                   class="flex items-center gap-2 text-green-700 text-sm font-medium">
+                <i class="ph ph-check-circle text-lg"></i>
+                <span>Complete! Your component has been created.</span>
+              </div>
             </div>
           </div>
 

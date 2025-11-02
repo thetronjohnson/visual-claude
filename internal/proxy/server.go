@@ -156,10 +156,20 @@ func (s *Server) handleAnalyzeDesign(conn *websocket.Conn, data map[string]inter
 
 	// Extract fields
 	imageBase64, _ := data["image"].(string)
+	imageType, _ := data["imageType"].(string)
 	userPrompt, _ := data["prompt"].(string)
 
 	if imageBase64 == "" || userPrompt == "" {
 		return fmt.Errorf("missing required fields: image or prompt")
+	}
+
+	// Default to image/png if type not provided
+	if imageType == "" {
+		imageType = "image/png"
+	}
+
+	if s.verbose {
+		fmt.Printf("[Proxy] Received image type: %s\n", imageType)
 	}
 
 	// Get API key
@@ -191,18 +201,48 @@ func (s *Server) handleAnalyzeDesign(conn *websocket.Conn, data map[string]inter
 
 User's request: %s
 
-Please analyze this design image and provide a detailed description that includes:
-1. Visual layout and structure (what elements are present, how they're arranged)
-2. Colors, typography, and spacing used
-3. Interactive elements (buttons, inputs, etc.)
-4. Any animations or transitions visible
-5. Responsive design considerations
+CRITICAL: Analyze EVERY element in this design image. Do not skip or omit anything.
 
-Be specific and detailed so a developer can implement this accurately.`, ctx.String(), ctx.Styling, userPrompt)
+Provide a comprehensive description that includes:
+
+1. **Layout & Structure** (TOP TO BOTTOM, LEFT TO RIGHT):
+   - Header/navigation (logo, menu items, buttons)
+   - Hero section (headings, subheadings, all text content)
+   - Call-to-action buttons (text, colors, placement)
+   - Feature sections (cards, icons, descriptions)
+   - Decorative elements (shapes, illustrations, backgrounds)
+   - Footer elements
+
+2. **All Text Content**:
+   - Write out EVERY piece of text you see (headings, paragraphs, button labels, etc.)
+   - Note text sizes, weights, and colors
+
+3. **Colors & Styling**:
+   - Background colors/gradients
+   - Text colors
+   - Button colors (normal and hover states if visible)
+   - Border colors and radius values
+   - Shadow effects
+
+4. **Spacing & Dimensions**:
+   - Margins and padding between sections
+   - Element sizes (buttons, cards, etc.)
+   - Alignment (left, center, right)
+
+5. **Interactive Elements**:
+   - All buttons (primary, secondary, text links)
+   - Input fields if present
+   - Icons and their purposes
+
+6. **Responsive/Layout Notes**:
+   - How elements are arranged (grid, flex)
+   - Relative positioning
+
+Be EXHAUSTIVELY detailed. A developer should be able to recreate this pixel-perfect from your description alone.`, ctx.String(), ctx.Styling, userPrompt)
 
 	// Call Claude Vision API
 	client := ai.NewClient(apiKey)
-	visualAnalysis, err := client.GenerateFromImage(imageBase64, visionPrompt)
+	visualAnalysis, err := client.GenerateFromImage(imageBase64, imageType, visionPrompt)
 	if err != nil {
 		return fmt.Errorf("vision analysis failed: %w", err)
 	}
@@ -212,7 +252,21 @@ Be specific and detailed so a developer can implement this accurately.`, ctx.Str
 	}
 
 	// Format as a message for Claude Code
-	instruction := fmt.Sprintf("%s\n\nDesign Analysis:\n%s", userPrompt, visualAnalysis)
+	instruction := fmt.Sprintf(`%s
+
+IMPORTANT: Implement EVERY element described below. Do not skip or omit any components, text, buttons, or decorative elements.
+
+Design Analysis:
+%s
+
+Create a complete, production-ready component that includes:
+- All text content exactly as described
+- All buttons and interactive elements
+- All styling (colors, spacing, typography)
+- All decorative elements and shapes
+- Proper layout and responsive behavior
+
+The result should be pixel-perfect to the original design.`, userPrompt, visualAnalysis)
 
 	// Create a bridge message (similar to element selection)
 	msg := bridge.Message{

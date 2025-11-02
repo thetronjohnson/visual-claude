@@ -91,7 +91,12 @@ func NewClient(apiKey string) *Client {
 }
 
 // GenerateFromImage generates code from a design image using Claude's vision capabilities
-func (c *Client) GenerateFromImage(imageBase64, prompt string) (string, error) {
+func (c *Client) GenerateFromImage(imageBase64, mediaType, prompt string) (string, error) {
+	// Default to image/png if mediaType is empty
+	if mediaType == "" {
+		mediaType = "image/png"
+	}
+
 	// Build request
 	req := Request{
 		Model:     Model,
@@ -104,7 +109,7 @@ func (c *Client) GenerateFromImage(imageBase64, prompt string) (string, error) {
 						Type: "image",
 						Source: &ImageSource{
 							Type:      "base64",
-							MediaType: "image/png", // Assuming PNG, could be dynamic
+							MediaType: mediaType, // Use dynamic media type
 							Data:      imageBase64,
 						},
 					},
