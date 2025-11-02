@@ -412,13 +412,19 @@
      * @param {number} deltaY - Vertical drag distance
      * @param {Object} layoutContext - Layout context from detectLayoutContext
      * @param {Object} siblingArrangement - Sibling arrangement from getSiblingArrangement
+     * @param {boolean} shiftKeyHeld - Whether Shift key is held (overrides to free-drag)
      * @returns {boolean} Whether to trigger reorder
      */
-    shouldTriggerReorder(element, deltaX, deltaY, layoutContext, siblingArrangement) {
+    shouldTriggerReorder(element, deltaX, deltaY, layoutContext, siblingArrangement, shiftKeyHeld = false) {
       if (!layoutContext || !siblingArrangement) return false;
       if (siblingArrangement.count < 2) return false;
 
-      const threshold = 40; // Minimum drag distance to trigger reorder (increased for less sensitivity)
+      // If Shift is held, disable reorder mode (allow free-drag)
+      if (shiftKeyHeld) return false;
+
+      // SMART DEFAULT: When siblings exist, prefer reorder mode
+      // Just need minimal movement to distinguish from click
+      const threshold = 10;
 
       // For flex column or vertical arrangement
       if ((layoutContext.isFlex && layoutContext.flexDirection === 'column') ||

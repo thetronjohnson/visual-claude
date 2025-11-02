@@ -184,6 +184,24 @@ body[data-vc-mode="edit"] .vc-hover-drag-handle {
   cursor: move !important;
 }
 
+/* Reorder Mode - vertical reordering cursor */
+body[data-vc-mode="edit"].vc-reorder-vertical,
+body[data-vc-mode="edit"].vc-reorder-vertical * {
+  cursor: ns-resize !important;
+}
+
+/* Reorder Mode - horizontal reordering cursor */
+body[data-vc-mode="edit"].vc-reorder-horizontal,
+body[data-vc-mode="edit"].vc-reorder-horizontal * {
+  cursor: ew-resize !important;
+}
+
+/* Free-drag override (Shift held) - show crosshair */
+body[data-vc-mode="edit"].vc-free-drag-override,
+body[data-vc-mode="edit"].vc-free-drag-override * {
+  cursor: crosshair !important;
+}
+
 /* Reorder Mode Styles */
 .vc-reordering {
   transition: opacity 0.1s ease !important;

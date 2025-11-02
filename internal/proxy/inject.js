@@ -65,7 +65,6 @@
 
       // Unified Edit Mode State
       selectedElement: null, // Currently selected element for visual editing
-      pendingChanges: new Map(), // Map<selector, {transform, width, height, originalStyles}>
       dragHandle: {
         isDragging: false,
         isResizing: false,
@@ -261,6 +260,11 @@
         if (this.isProcessing) return;
         if (!this.isEditMode) return;
 
+        // Don't start area selection if an element is already selected
+        if (this.selectedElement) {
+          return;
+        }
+
         if (this.showTextEditor) {
           this.hideTextEditor();
         }
@@ -443,12 +447,47 @@
             this.exitReorderMode();
           }
 
+          // FAIL-SAFE: Force cleanup of any stuck floating elements
+          if (this.selectedElement) {
+            // Remove any lingering position:fixed styles
+            this.selectedElement.style.position = '';
+            this.selectedElement.style.left = '';
+            this.selectedElement.style.top = '';
+            this.selectedElement.style.zIndex = '';
+            this.selectedElement.style.opacity = '';
+            this.selectedElement.style.pointerEvents = '';
+            this.selectedElement.classList.remove('vc-reordering');
+
+            // Restore to original position if we have the data
+            if (this.dragHandle.originalParent && this.dragHandle.originalNextSibling) {
+              try {
+                this.dragHandle.originalParent.insertBefore(this.selectedElement, this.dragHandle.originalNextSibling);
+              } catch (err) {
+                // Silently fail if DOM structure changed
+              }
+            } else if (this.dragHandle.originalParent) {
+              try {
+                this.dragHandle.originalParent.appendChild(this.selectedElement);
+              } catch (err) {
+                // Silently fail if DOM structure changed
+              }
+            }
+          }
+
           // Cancel any drag in progress
           if (this.isDragging) {
             this.isDragging = false;
             this.showSelectionRect = false;
             this.showSelectionInfo = false;
           }
+
+          // Reset drag handle state
+          this.dragHandle.isDragging = false;
+          this.dragHandle.isResizing = false;
+          this.dragHandle.isDraggingFromHandle = false;
+
+          // Clean up cursor classes
+          document.body.classList.remove('vc-reorder-vertical', 'vc-reorder-horizontal', 'vc-free-drag-override');
 
           console.log('[Visual Claude] Escape pressed - all selections cancelled');
         }
@@ -519,7 +558,6 @@
 
         element.classList.add('vc-element-highlight');
         this.currentHoveredElement = element;
-        this.hoverDragHandleElement = element;
 
         const label = window.VCUtils.getElementLabel(element);
         const rect = element.getBoundingClientRect();
@@ -528,14 +566,6 @@
         this.selectionInfoText = label;
         this.selectionInfoStyle = `left: ${rect.left + 10}px; top: ${rect.top - 30}px;`;
         this.showSelectionInfo = true;
-
-        // Show drag handle on left side (further away to prevent flickering)
-        const handleSize = 24;
-        const handleLeft = rect.left - handleSize - 4; // Closer to element
-        const handleTop = rect.top + (rect.height / 2) - (handleSize / 2);
-
-        this.hoverDragHandleStyle = `left: ${handleLeft}px; top: ${handleTop}px;`;
-        this.showHoverDragHandle = true;
       },
 
       removeElementHighlight() {
@@ -973,6 +1003,15 @@
         this.showResizeHandles = true;
         this.updateResizeHandlesPosition();
 
+        // Show drag handle on left side
+        this.hoverDragHandleElement = element;
+        const rect = element.getBoundingClientRect();
+        const handleSize = 24;
+        const handleLeft = rect.left - handleSize - 4;
+        const handleTop = rect.top + (rect.height / 2) - (handleSize / 2);
+        this.hoverDragHandleStyle = `left: ${handleLeft}px; top: ${handleTop}px;`;
+        this.showHoverDragHandle = true;
+
         // Add scroll/resize listeners for this selected element
         if (!this._scrollListener) {
           this._scrollListener = () => {
@@ -982,6 +1021,14 @@
             if (this.showActionMenu && this.actionMenuElement) {
               this.updateActionMenuPosition();
             }
+            // Update drag handle position when scrolling/resizing
+            if (this.showHoverDragHandle && this.hoverDragHandleElement) {
+              const rect = this.hoverDragHandleElement.getBoundingClientRect();
+              const handleSize = 24;
+              const handleLeft = rect.left - handleSize - 4;
+              const handleTop = rect.top + (rect.height / 2) - (handleSize / 2);
+              this.hoverDragHandleStyle = `left: ${handleLeft}px; top: ${handleTop}px;`;
+            }
           };
           this._resizeListener = () => {
             if (this.showResizeHandles && this.selectedElement) {
@@ -989,6 +1036,14 @@
             }
             if (this.showActionMenu && this.actionMenuElement) {
               this.updateActionMenuPosition();
+            }
+            // Update drag handle position when scrolling/resizing
+            if (this.showHoverDragHandle && this.hoverDragHandleElement) {
+              const rect = this.hoverDragHandleElement.getBoundingClientRect();
+              const handleSize = 24;
+              const handleLeft = rect.left - handleSize - 4;
+              const handleTop = rect.top + (rect.height / 2) - (handleSize / 2);
+              this.hoverDragHandleStyle = `left: ${handleLeft}px; top: ${handleTop}px;`;
             }
           };
           window.addEventListener('scroll', this._scrollListener, true);
@@ -1006,6 +1061,10 @@
         this.showResizeHandles = false;
         this.showActionMenu = false;
         this.actionMenuElement = null;
+
+        // Hide drag handle
+        this.showHoverDragHandle = false;
+        this.hoverDragHandleElement = null;
 
         // Clean up listeners
         if (this._scrollListener) {
@@ -1207,9 +1266,6 @@
         const change = this.undoStack.pop();
         this.redoStack.push(change);
 
-        // Remove from pendingChanges if it exists
-        this.pendingChanges.delete(change.selector);
-
         // Remove from changeHistory
         this.removeFromHistory(change.id);
 
@@ -1344,14 +1400,6 @@
             }
           }
         }
-
-        // Re-add to pendingChanges (skip for AI - handled above)
-        if (change.type !== 'ai') {
-          this.pendingChanges.set(change.selector, {
-            operation: change.type,
-            ...change.data
-          });
-        }
       },
 
       formatTimestamp(timestamp) {
@@ -1482,28 +1530,37 @@
         const totalTokens = this.estimateTotalTokens(changes);
         console.log('[Visual Claude] Total estimated tokens:', totalTokens);
 
-        // Check if we need to batch
-        if (totalTokens > 6000) {
-          console.log('[Visual Claude] Creating batches...');
-          const batches = this.createBatches(changes, 6000);
-          console.log('[Visual Claude] Split into', batches.length, 'batches');
+        try {
+          // Check if we need to batch
+          if (totalTokens > 6000) {
+            console.log('[Visual Claude] Creating batches...');
+            const batches = this.createBatches(changes, 6000);
+            console.log('[Visual Claude] Split into', batches.length, 'batches');
 
-          // Process batches sequentially
-          for (let i = 0; i < batches.length; i++) {
-            console.log(`[Visual Claude] Processing batch ${i + 1}/${batches.length}...`);
-            await this.sendBatchToBackend(batches[i], i + 1, batches.length);
+            // Process batches sequentially
+            for (let i = 0; i < batches.length; i++) {
+              console.log(`[Visual Claude] Processing batch ${i + 1}/${batches.length}...`);
+              await this.sendBatchToBackend(batches[i], i + 1, batches.length);
+            }
+          } else {
+            // Send all changes in one batch
+            await this.sendBatchToBackend(changes, 1, 1);
           }
-        } else {
-          // Send all changes in one batch
-          await this.sendBatchToBackend(changes, 1, 1);
+
+          // All batches completed successfully
+          console.log('[Visual Claude] ✓ All changes committed successfully');
+          this.setStatus('idle');
+
+          // Clear history after successful commit
+          this.clearHistory();
+
+          // Close history panel
+          this.showHistoryPanel = false;
+        } catch (error) {
+          console.error('[Visual Claude] ✗ Commit failed:', error);
+          this.setStatus('idle');
+          // Don't clear history or close panel on error so user can retry
         }
-
-        // Clear history after successful commit
-        this.clearHistory();
-        this.pendingChanges.clear();
-
-        // Close history panel
-        this.showHistoryPanel = false;
       },
 
       async sendBatchToBackend(changes, batchNumber, totalBatches) {
@@ -1533,7 +1590,7 @@
         });
 
         const message = {
-          type: 'visual-edits',
+          type: 'apply-visual-edits',
           changes: changesForBackend,
           batch: {
             number: batchNumber,
@@ -1543,15 +1600,46 @@
 
         if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
           this.setStatus('processing');
+
+          // Create a promise that resolves when backend sends completion
+          const completionPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Batch processing timeout (120s)'));
+            }, 120000); // 120 second timeout
+
+            // Store the resolver so the WebSocket handler can call it
+            this.pendingBatchResolvers = this.pendingBatchResolvers || {};
+            this.pendingBatchResolvers[message.batch.number] = {
+              resolve: (result) => {
+                clearTimeout(timeout);
+                resolve(result);
+              },
+              reject: (error) => {
+                clearTimeout(timeout);
+                reject(error);
+              }
+            };
+          });
+
           this.messageWs.send(JSON.stringify(message));
           console.log(`[Visual Claude] ✓ Batch ${batchNumber}/${totalBatches} sent`);
 
-          // Wait for processing before sending next batch
+          // Wait for backend to complete this batch before proceeding
+          try {
+            await completionPromise;
+            console.log(`[Visual Claude] ✓ Batch ${batchNumber}/${totalBatches} completed`);
+          } catch (error) {
+            console.error(`[Visual Claude] ✗ Batch ${batchNumber}/${totalBatches} failed:`, error);
+            throw error;
+          }
+
+          // Small delay between batches for stability
           if (batchNumber < totalBatches) {
-            await new Promise(resolve => setTimeout(resolve, 2000)); // 2s delay between batches
+            await new Promise(resolve => setTimeout(resolve, 1000));
           }
         } else {
           console.error('[Visual Claude] ✗ WebSocket not connected');
+          throw new Error('WebSocket not connected');
         }
       },
 
@@ -1588,6 +1676,19 @@
           this.dragHandle.isDragging = true;
           this.dragHandle.isDraggingFromHandle = true;
           document.body.style.cursor = 'move';
+
+          // CRITICAL: Store original styles and position for snap-back recovery
+          this.dragHandle.originalStyles = {
+            position: this.selectedElement.style.position,
+            left: this.selectedElement.style.left,
+            top: this.selectedElement.style.top,
+            zIndex: this.selectedElement.style.zIndex,
+            opacity: this.selectedElement.style.opacity,
+            pointerEvents: this.selectedElement.style.pointerEvents,
+            transform: this.selectedElement.style.transform,
+          };
+          this.dragHandle.originalParent = this.selectedElement.parentElement;
+          this.dragHandle.originalNextSibling = this.selectedElement.nextSibling;
 
           // Detect layout context for potential reordering
           this.reorderMode.layoutContext = window.VCUtils.detectLayoutContext(this.selectedElement);
@@ -1633,12 +1734,14 @@
 
         if (this.dragHandle.isDragging) {
           // Check if we should trigger reorder mode
+          // Shift key allows override to free-drag mode
           const shouldReorder = window.VCUtils.shouldTriggerReorder(
             this.selectedElement,
             deltaX,
             deltaY,
             this.reorderMode.layoutContext,
-            this.reorderMode.siblingArrangement
+            this.reorderMode.siblingArrangement,
+            e.shiftKey
           );
 
           if (shouldReorder && this.reorderMode.siblingArrangement) {
@@ -1648,6 +1751,11 @@
               // Remove transform when entering reorder mode
               this.selectedElement.style.transform = '';
               this.selectedElement.classList.add('vc-reordering');
+
+              // Add cursor indicator based on layout direction
+              const isVertical = this.reorderMode.siblingArrangement.isVertical;
+              document.body.classList.add(isVertical ? 'vc-reorder-vertical' : 'vc-reorder-horizontal');
+
               console.log('[Visual Claude] Entered reorder mode');
             }
 
@@ -1684,6 +1792,13 @@
             if (this.reorderMode.isActive) {
               // Exit reorder mode
               this.exitReorderMode();
+            }
+
+            // Show crosshair cursor when Shift is held (free-drag override)
+            if (e.shiftKey && this.reorderMode.siblingArrangement && this.reorderMode.siblingArrangement.count >= 2) {
+              document.body.classList.add('vc-free-drag-override');
+            } else {
+              document.body.classList.remove('vc-free-drag-override');
             }
 
             // Validate drop target
@@ -1864,27 +1979,35 @@
       },
 
       exitReorderMode() {
-        if (!this.reorderMode.isActive) return;
-
+        // DEFENSIVE: Always clean up, even if isActive is false
+        // This prevents stuck floating elements
+        const wasActive = this.reorderMode.isActive;
         this.reorderMode.isActive = false;
         this.hideReorderPlaceholder();
 
-        // Reset dragged element styles
+        // Remove cursor indicators
+        document.body.classList.remove('vc-reorder-vertical', 'vc-reorder-horizontal', 'vc-free-drag-override');
+
+        // CRITICAL: Reset dragged element styles unconditionally
         if (this.selectedElement) {
           this.selectedElement.classList.remove('vc-reordering');
+          // Use empty string to remove inline styles
           this.selectedElement.style.position = '';
           this.selectedElement.style.left = '';
           this.selectedElement.style.top = '';
           this.selectedElement.style.pointerEvents = '';
           this.selectedElement.style.zIndex = '';
           this.selectedElement.style.opacity = '';
+          this.selectedElement.style.transform = '';
         }
 
         // Reset sibling transforms
         if (this.reorderMode.siblingArrangement) {
           this.reorderMode.siblingArrangement.siblings.forEach(sibling => {
-            sibling.style.transition = '';
-            sibling.style.transform = '';
+            if (sibling) {
+              sibling.style.transition = '';
+              sibling.style.transform = '';
+            }
           });
         }
 
@@ -1893,7 +2016,9 @@
         this.reorderMode.insertBefore = true;
         this.reorderMode.newIndex = -1;
 
-        console.log('[Visual Claude] Exited reorder mode');
+        if (wasActive) {
+          console.log('[Visual Claude] Exited reorder mode');
+        }
       },
 
       // ============================================================================
@@ -1996,7 +2121,7 @@
 
         // Check if this was a reorder operation
         if (this.reorderMode.isActive && this.reorderMode.currentTarget) {
-          // REORDER OPERATION
+          // VALID REORDER OPERATION
           const parentSelector = window.VCUtils.getSelector(this.reorderMode.layoutContext.parent);
           const targetSelector = window.VCUtils.getSelector(this.reorderMode.currentTarget);
 
@@ -2016,7 +2141,6 @@
             }
           };
 
-          this.pendingChanges.set(selector, change);
           console.log('[Visual Claude] Stored reorder operation:', selector, change);
 
           // Add to history
@@ -2038,6 +2162,28 @@
 
           // Exit reorder mode and clean up
           this.exitReorderMode();
+        } else if (this.reorderMode.isActive && !this.reorderMode.currentTarget) {
+          // INVALID REORDER DROP - Snap back to original position
+          console.log('[Visual Claude] Invalid reorder drop - snapping back to original position');
+
+          // Restore element to original position in DOM if it was moved
+          if (this.dragHandle.originalParent && this.dragHandle.originalNextSibling) {
+            this.dragHandle.originalParent.insertBefore(this.selectedElement, this.dragHandle.originalNextSibling);
+          } else if (this.dragHandle.originalParent) {
+            this.dragHandle.originalParent.appendChild(this.selectedElement);
+          }
+
+          // Restore original styles
+          if (this.dragHandle.originalStyles) {
+            Object.keys(this.dragHandle.originalStyles).forEach(key => {
+              this.selectedElement.style[key] = this.dragHandle.originalStyles[key] || '';
+            });
+          }
+
+          // Exit reorder mode and clean up
+          this.exitReorderMode();
+
+          // Don't add to history - this was an invalid operation
         } else {
           // TRANSFORM/RESIZE OPERATION
           const change = {
@@ -2054,7 +2200,6 @@
             }
           };
 
-          this.pendingChanges.set(selector, change);
           console.log('[Visual Claude] Stored transform/resize:', selector, change);
 
           // Add to history
@@ -2085,70 +2230,14 @@
         this.clearDropHighlight();
         this.currentDropTarget = null;
 
+        // Clean up cursor classes
+        document.body.classList.remove('vc-reorder-vertical', 'vc-reorder-horizontal', 'vc-free-drag-override');
+
         // Remove global listeners
         document.removeEventListener('mousemove', this.handleDragMove.bind(this));
         document.removeEventListener('mouseup', this.handleDragEnd.bind(this));
       },
 
-      applyPendingChanges() {
-        if (this.pendingChanges.size === 0) {
-          console.warn('[Visual Claude] No pending changes to apply');
-          return;
-        }
-
-        console.log('[Visual Claude] Applying', this.pendingChanges.size, 'pending changes');
-
-        // Convert Map to array for WebSocket
-        const changes = [];
-        this.pendingChanges.forEach((change, selector) => {
-          const changeData = {
-            selector: selector,
-            operation: change.operation || 'transform', // Default to transform for backward compatibility
-          };
-
-          if (change.operation === 'reorder') {
-            // Reorder operation
-            changeData.reorderData = change.reorderData;
-          } else {
-            // Transform/resize operation
-            changeData.styles = change.styles || {
-              transform: change.transform || '',
-              width: change.width || '',
-              height: change.height || '',
-            };
-          }
-
-          changes.push(changeData);
-        });
-
-        // Send to backend
-        const message = {
-          type: 'apply-visual-edits',
-          changes: changes,
-        };
-
-        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
-          this.messageWs.send(JSON.stringify(message));
-          this.setStatus('processing');
-
-          // Clear pending changes
-          this.pendingChanges.clear();
-          this.deselectElement();
-        } else {
-          console.error('[Visual Claude] ✗ WebSocket not connected');
-        }
-      },
-
-      discardPendingChanges() {
-        console.log('[Visual Claude] Discarding', this.pendingChanges.size, 'pending changes');
-
-        // Reload page to reset all inline styles
-        window.location.reload();
-      },
-
-      get pendingChangesCount() {
-        return this.pendingChanges.size;
-      },
 
       // ============================================================================
       // STATUS INDICATOR
@@ -2264,10 +2353,36 @@
               console.log('[Visual Claude] ✅ Server acknowledged');
             } else if (data.status === 'complete') {
               console.log('[Visual Claude] 🎉 Task completed');
+
+              // Check if this is a batch completion that needs to resolve a promise
+              if (this.pendingBatchResolvers && data.id) {
+                // Find matching batch resolver
+                for (const [batchNumber, resolver] of Object.entries(this.pendingBatchResolvers)) {
+                  if (resolver) {
+                    resolver.resolve({ status: 'complete' });
+                    delete this.pendingBatchResolvers[batchNumber];
+                    break; // Only resolve one batch at a time
+                  }
+                }
+              }
+
               this.setStatus('complete');
               this.currentMessageId = null;
             } else if (data.status === 'error') {
               console.error('[Visual Claude] ❌ Error:', data.error);
+
+              // Check if this is a batch error that needs to reject a promise
+              if (this.pendingBatchResolvers && data.id) {
+                // Find matching batch resolver
+                for (const [batchNumber, resolver] of Object.entries(this.pendingBatchResolvers)) {
+                  if (resolver) {
+                    resolver.reject(new Error(data.error || 'Unknown error'));
+                    delete this.pendingBatchResolvers[batchNumber];
+                    break; // Only reject one batch at a time
+                  }
+                }
+              }
+
               this.statusText = 'Error - Reloading...';
               this.statusClass = '';
               this.showStatusIndicator = true;
@@ -2611,23 +2726,6 @@
               class="vc-action-menu-btn">
         <span class="vc-action-menu-icon">🎨</span>
         <span class="vc-action-menu-label">AI</span>
-      </button>
-    </div>
-  `;
-
-  // Visual Edit Toolbar (Apply/Discard) - shows when there are pending changes
-  app.innerHTML += `
-    <div x-show="pendingChangesCount > 0"
-         x-transition
-         class="vc-visual-toolbar fixed bottom-24 right-6 z-[1000003] flex items-center gap-2 bg-white border-[2.5px] border-[#333] rounded-lg shadow-lg p-2">
-      <span class="text-xs font-semibold text-[#333] px-2" x-text="pendingChangesCount + ' change' + (pendingChangesCount !== 1 ? 's' : '')"></span>
-      <button @click="discardPendingChanges()"
-              class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer bg-gray-200 text-[#333] border-[2.5px] border-[#333] hover:opacity-85 active:scale-95 transition-all">
-        Discard
-      </button>
-      <button @click="applyPendingChanges()"
-              class="px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer bg-green-500 text-white border-[2.5px] border-[#333] hover:opacity-85 active:scale-95 transition-all">
-        Apply Changes
       </button>
     </div>
   `;
