@@ -147,6 +147,89 @@
     },
 
     /**
+     * Extract CSS custom properties (design tokens) from the page
+     * @returns {Object} Design tokens with colors, spacing, typography
+     */
+    extractDesignTokens() {
+      const tokens = {
+        colors: {},
+        spacing: {},
+        typography: {},
+        other: {}
+      };
+
+      try {
+        // Get computed styles from root element
+        const rootStyles = window.getComputedStyle(document.documentElement);
+
+        // Extract all CSS custom properties
+        for (let i = 0; i < rootStyles.length; i++) {
+          const propName = rootStyles[i];
+
+          // Only process CSS custom properties (start with --)
+          if (propName.startsWith('--')) {
+            const propValue = rootStyles.getPropertyValue(propName).trim();
+
+            // Skip empty values
+            if (!propValue) continue;
+
+            // Categorize by naming convention
+            if (propName.includes('color') || propName.includes('bg') || propName.includes('background') ||
+                propName.includes('border') && propValue.match(/^#|rgb|hsl/)) {
+              tokens.colors[propName] = propValue;
+            } else if (propName.includes('space') || propName.includes('spacing') ||
+                       propName.includes('gap') || propName.includes('padding') ||
+                       propName.includes('margin')) {
+              tokens.spacing[propName] = propValue;
+            } else if (propName.includes('font') || propName.includes('text') ||
+                       propName.includes('letter') || propName.includes('line')) {
+              tokens.typography[propName] = propValue;
+            } else {
+              tokens.other[propName] = propValue;
+            }
+          }
+        }
+
+        // Also scan stylesheets for CSS variables that might not be on root
+        document.querySelectorAll('style, link[rel="stylesheet"]').forEach(styleElement => {
+          try {
+            if (styleElement.sheet && styleElement.sheet.cssRules) {
+              for (let rule of styleElement.sheet.cssRules) {
+                if (rule.style) {
+                  for (let i = 0; i < rule.style.length; i++) {
+                    const propName = rule.style[i];
+                    if (propName.startsWith('--')) {
+                      const propValue = rule.style.getPropertyValue(propName).trim();
+                      if (propValue) {
+                        // Same categorization as above
+                        if (propName.includes('color') || propName.includes('bg') || propName.includes('background')) {
+                          tokens.colors[propName] = propValue;
+                        } else if (propName.includes('space') || propName.includes('spacing') || propName.includes('gap')) {
+                          tokens.spacing[propName] = propValue;
+                        } else if (propName.includes('font') || propName.includes('text')) {
+                          tokens.typography[propName] = propValue;
+                        } else {
+                          tokens.other[propName] = propValue;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // Skip stylesheets that can't be accessed (CORS)
+          }
+        });
+
+      } catch (err) {
+        console.error('[Visual Claude] Failed to extract design tokens:', err);
+      }
+
+      return tokens;
+    },
+
+    /**
      * Find the best element under cursor for selection
      * @param {Element} target - Initial target element
      * @returns {Element|null} Best selectable element

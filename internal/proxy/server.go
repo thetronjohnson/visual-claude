@@ -399,70 +399,14 @@ func (s *Server) handleApplyVisualEdits(conn *websocket.Conn, data map[string]in
 	}
 
 	instruction.WriteString(fmt.Sprintf(`
-Please analyze the codebase and apply these visual changes appropriately:
+Apply these visual changes to the %s codebase (%s styling).
 
-**Project Context:**
-- Framework: %s
-- Styling: %s
+For each change:
+- Find the element using the selector
+- Update the source code to match the changes described above
+- Use the project's existing patterns and styling approach
 
-**Instructions:**
-
-FOR REORDER OPERATIONS:
-1. Identify the parent container and how children are rendered
-2. Determine the reordering strategy based on the code structure:
-   - If children are rendered from an array (Array.map, v-for, etc.): Reorder the data array
-   - If children are static JSX/template elements: Reorder the elements in the source code
-   - If using flexbox/grid: Consider using CSS 'order' property as an alternative
-3. Update the appropriate file:
-   - For React: Reorder JSX elements or update state/data array
-   - For Vue: Reorder template elements or update reactive data
-   - For Svelte: Reorder template or update reactive statements
-   - For Angular: Reorder template or update component array
-4. Ensure list keys are properly maintained if using arrays
-5. Preserve all props, attributes, and event handlers during reordering
-
-FOR TRANSFORM/RESIZE OPERATIONS:
-1. Identify where elements are defined in the code
-2. Apply position/size changes using the project's styling approach:
-   - If using Tailwind CSS: Update className with utility classes (absolute, left-*, top-*, w-*, h-*)
-   - If using styled-components/CSS-in-JS: Update styled component definitions
-   - If using CSS files: Update the relevant stylesheet
-   - If using inline styles: Update the style prop/attribute
-3. Consider layout context:
-   - For absolute positioning, ensure parent has position: relative
-   - Maintain responsive design - don't break mobile layouts
-   - Preserve existing animations or transitions
-
-FOR TEXT EDIT OPERATIONS:
-1. Locate the element in the source code using the selector
-2. Update the text content in the appropriate location:
-   - For React: Update the text content inside JSX elements
-   - For Vue: Update the text content in template
-   - For Svelte: Update the text in the markup
-   - For HTML: Update the text content directly
-3. Preserve all HTML structure and formatting
-4. If text is stored in a variable or prop, update that instead
-5. Keep translations intact if using i18n
-
-FOR AI INSTRUCTION OPERATIONS:
-1. Read and understand the natural language instruction provided
-2. Locate the target element(s) using the selector and area information
-3. Apply the requested changes based on the instruction:
-   - For style changes: Update CSS, Tailwind classes, or inline styles
-   - For content changes: Modify text, add/remove elements as needed
-   - For layout changes: Adjust structure, positioning, or flex/grid properties
-   - For functionality changes: Update event handlers, props, or logic
-4. Use the area bounds and element count as context for the scope of changes
-5. Maintain code quality and follow project conventions
-6. If instruction is ambiguous, make reasonable assumptions based on context
-
-**General Guidelines:**
-- Make changes permanent in the appropriate files
-- Keep code clean and maintainable
-- Preserve component functionality and state
-- Test that the changes work as expected
-
-Apply these changes now.`, ctx.Framework, ctx.Styling))
+Make the changes permanent in the appropriate files.`, ctx.Framework, ctx.Styling))
 
 	// Create a bridge message
 	msg := bridge.Message{
@@ -552,9 +496,56 @@ func (s *Server) handleAIPreview(conn *websocket.Conn, data map[string]interface
 		return fmt.Errorf("no elements provided")
 	}
 
+	// Extract design tokens (optional)
+	var designTokens *ai.DesignTokens
+	if tokensData, ok := data["designTokens"].(map[string]interface{}); ok {
+		designTokens = &ai.DesignTokens{
+			Colors:     make(map[string]string),
+			Spacing:    make(map[string]string),
+			Typography: make(map[string]string),
+			Other:      make(map[string]string),
+		}
+
+		if colors, ok := tokensData["colors"].(map[string]interface{}); ok {
+			for k, v := range colors {
+				if str, ok := v.(string); ok {
+					designTokens.Colors[k] = str
+				}
+			}
+		}
+
+		if spacing, ok := tokensData["spacing"].(map[string]interface{}); ok {
+			for k, v := range spacing {
+				if str, ok := v.(string); ok {
+					designTokens.Spacing[k] = str
+				}
+			}
+		}
+
+		if typography, ok := tokensData["typography"].(map[string]interface{}); ok {
+			for k, v := range typography {
+				if str, ok := v.(string); ok {
+					designTokens.Typography[k] = str
+				}
+			}
+		}
+
+		if other, ok := tokensData["other"].(map[string]interface{}); ok {
+			for k, v := range other {
+				if str, ok := v.(string); ok {
+					designTokens.Other[k] = str
+				}
+			}
+		}
+	}
+
 	if s.verbose {
 		fmt.Printf("[Proxy] AI preview request: '%s' for %d element(s)\n",
 			instruction[:min(50, len(instruction))], len(elements))
+		if designTokens != nil {
+			fmt.Printf("[Proxy] Design tokens: %d colors, %d spacing, %d typography\n",
+				len(designTokens.Colors), len(designTokens.Spacing), len(designTokens.Typography))
+		}
 	}
 
 	// Get API key from config
@@ -569,7 +560,7 @@ func (s *Server) handleAIPreview(conn *websocket.Conn, data map[string]interface
 
 	// Call Claude API for preview
 	fmt.Println("[Proxy] ⏳ Requesting AI preview from Claude API...")
-	changes, err := client.GeneratePreview(instruction, elements, screenshot)
+	changes, err := client.GeneratePreview(instruction, elements, screenshot, designTokens)
 	if err != nil {
 		fmt.Printf("[Proxy] ❌ AI preview failed: %v\n", err)
 		return err

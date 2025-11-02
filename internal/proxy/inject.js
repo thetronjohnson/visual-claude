@@ -646,6 +646,9 @@
         this.hideInlineInput();
         this.setStatus('processing', 'Getting AI preview...');
 
+        // Extract design tokens from the page
+        const designTokens = window.VCUtils.extractDesignTokens();
+
         // PHASE 1: Get preview changes from Claude Code
         const previewMessage = {
           type: 'ai-preview',
@@ -658,6 +661,7 @@
             height: bounds.height,
           },
           elements: elementsInfo,
+          designTokens: designTokens,
         };
 
         console.log('[Visual Claude] Requesting AI preview...');
@@ -773,6 +777,21 @@
                 applied.oldValue = element.getAttribute(change.attribute);
                 element.setAttribute(change.attribute, change.value);
                 applied.newValue = change.value;
+                break;
+
+              case 'remove':
+                applied.oldValue = element.outerHTML;
+                applied.parent = element.parentElement;
+                applied.nextSibling = element.nextSibling;
+                element.remove();
+                applied.newValue = '(removed)';
+                break;
+
+              case 'hide':
+                applied.property = 'display';
+                applied.oldValue = element.style.display;
+                element.style.display = 'none';
+                applied.newValue = 'none';
                 break;
 
               default:
@@ -1512,6 +1531,10 @@
         }
 
         console.log('[Visual Claude] Committing', selected.length, 'selected changes');
+
+        // Close history panel immediately
+        this.showHistoryPanel = false;
+
         this.commitChanges(selected);
       },
 
@@ -1522,6 +1545,10 @@
         }
 
         console.log('[Visual Claude] Committing all', this.changeHistory.length, 'changes');
+
+        // Close history panel immediately
+        this.showHistoryPanel = false;
+
         this.commitChanges(this.changeHistory);
       },
 
@@ -1553,13 +1580,12 @@
 
           // Clear history after successful commit
           this.clearHistory();
-
-          // Close history panel
-          this.showHistoryPanel = false;
         } catch (error) {
           console.error('[Visual Claude] ✗ Commit failed:', error);
           this.setStatus('idle');
-          // Don't clear history or close panel on error so user can retry
+
+          // Reopen history panel on error so user can retry
+          this.showHistoryPanel = true;
         }
       },
 
@@ -2339,14 +2365,21 @@
               return;
             }
 
-            if (data.id && data.id !== this.currentMessageId) {
-              console.warn('[Visual Claude] ⚠️  Ignoring stale message');
-              return;
-            }
+            // Skip stale message checks if we have pending batch operations
+            // Batches use their own tracking via pendingBatchResolvers
+            const hasPendingBatches = this.pendingBatchResolvers &&
+                                      Object.keys(this.pendingBatchResolvers).length > 0;
 
-            if (!this.currentMessageId && (data.status === 'complete' || data.status === 'error')) {
-              console.warn('[Visual Claude] ⚠️  Ignoring completion with no active request');
-              return;
+            if (!hasPendingBatches) {
+              if (data.id && data.id !== this.currentMessageId) {
+                console.warn('[Visual Claude] ⚠️  Ignoring stale message');
+                return;
+              }
+
+              if (!this.currentMessageId && (data.status === 'complete' || data.status === 'error')) {
+                console.warn('[Visual Claude] ⚠️  Ignoring completion with no active request');
+                return;
+              }
             }
 
             if (data.status === 'received') {
@@ -2355,41 +2388,53 @@
               console.log('[Visual Claude] 🎉 Task completed');
 
               // Check if this is a batch completion that needs to resolve a promise
+              let isBatchOperation = false;
               if (this.pendingBatchResolvers && data.id) {
                 // Find matching batch resolver
                 for (const [batchNumber, resolver] of Object.entries(this.pendingBatchResolvers)) {
                   if (resolver) {
                     resolver.resolve({ status: 'complete' });
                     delete this.pendingBatchResolvers[batchNumber];
+                    isBatchOperation = true;
                     break; // Only resolve one batch at a time
                   }
                 }
               }
 
-              this.setStatus('complete');
-              this.currentMessageId = null;
+              // Only set status to 'complete' if this is NOT a batch operation
+              // Batch operations handle their own status updates in commitChanges()
+              if (!isBatchOperation) {
+                this.setStatus('complete');
+                this.currentMessageId = null;
+              }
             } else if (data.status === 'error') {
               console.error('[Visual Claude] ❌ Error:', data.error);
 
               // Check if this is a batch error that needs to reject a promise
+              let isBatchOperation = false;
               if (this.pendingBatchResolvers && data.id) {
                 // Find matching batch resolver
                 for (const [batchNumber, resolver] of Object.entries(this.pendingBatchResolvers)) {
                   if (resolver) {
                     resolver.reject(new Error(data.error || 'Unknown error'));
                     delete this.pendingBatchResolvers[batchNumber];
+                    isBatchOperation = true;
                     break; // Only reject one batch at a time
                   }
                 }
               }
 
-              this.statusText = 'Error - Reloading...';
-              this.statusClass = '';
-              this.showStatusIndicator = true;
-              this.currentMessageId = null;
-              setTimeout(() => {
-                window.location.reload();
-              }, window.VCConstants.ERROR_RELOAD_DELAY);
+              // Only trigger error reload if this is NOT a batch operation
+              // Batch operations handle their own error handling in commitChanges()
+              if (!isBatchOperation) {
+                this.statusText = 'Error - Reloading...';
+                this.statusClass = '';
+                this.showStatusIndicator = true;
+                this.currentMessageId = null;
+                setTimeout(() => {
+                  window.location.reload();
+                }, window.VCConstants.ERROR_RELOAD_DELAY);
+              }
             }
           } catch (err) {
             console.error('[Visual Claude] Failed to parse message:', err);
@@ -2661,12 +2706,12 @@
          x-bind:style="hoverDragHandleStyle"
          @mousedown="startDragFromHoverHandle($event)"
          @mouseenter="$event.stopPropagation()"
-         class="vc-hover-drag-handle fixed z-[1000002] pointer-events-auto cursor-move">
+         class="vc-hover-drag-handle fixed z-[1000002] pointer-events-auto cursor-grab active:cursor-grabbing">
       <!-- Invisible larger hitbox to prevent flickering -->
       <div class="absolute -inset-2"></div>
-      <!-- Visible handle -->
-      <div class="relative w-6 h-6 rounded-full bg-[#3b82f6] border-2 border-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform">
-        <i class="ph ph-arrows-out-cardinal text-white text-sm"></i>
+      <!-- Visible handle (Notion-style) -->
+      <div class="relative w-6 h-6 rounded flex items-center justify-center bg-white border border-gray-300 shadow-sm hover:bg-gray-50 transition-colors">
+        <i class="ph ph-dots-six text-gray-500 text-base"></i>
       </div>
     </div>
   `;
@@ -2676,9 +2721,9 @@
     <div x-show="showResizeHandles"
          x-bind:style="resizeHandlesStyle"
          class="vc-drag-handles fixed z-[1000002] pointer-events-none">
-      <!-- Center Drag Handle -->
+      <!-- Center Drag Handle (invisible - no border, selection outline handles the visual) -->
       <div @mousedown="startDrag($event, 'move')"
-           class="absolute top-0 left-0 w-full h-full cursor-move pointer-events-auto border-2 border-blue-500 bg-blue-500 bg-opacity-5"></div>
+           class="absolute top-0 left-0 w-full h-full cursor-move pointer-events-auto"></div>
 
       <!-- Corner Resize Handles -->
       <div @mousedown="startDrag($event, 'nw')"

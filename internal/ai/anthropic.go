@@ -194,21 +194,81 @@ type PreviewResponse struct {
 	Changes []DOMChange `json:"changes"`
 }
 
+// DesignTokens represents extracted CSS design tokens from the page
+type DesignTokens struct {
+	Colors     map[string]string `json:"colors"`
+	Spacing    map[string]string `json:"spacing"`
+	Typography map[string]string `json:"typography"`
+	Other      map[string]string `json:"other"`
+}
+
 // GeneratePreview generates DOM manipulation instructions from AI instruction
 // This is used for instant preview mode - no file modifications, just DOM changes
-func (c *Client) GeneratePreview(instruction string, elements []ElementInfo, screenshot string) ([]DOMChange, error) {
-	// Build element context string
-	var elementsDesc string
-	for i, el := range elements {
-		elementsDesc += fmt.Sprintf("%d. %s (selector: %s)\n", i+1, el.TagName, el.Selector)
-		if el.ID != "" {
-			elementsDesc += fmt.Sprintf("   ID: %s\n", el.ID)
+func (c *Client) GeneratePreview(instruction string, elements []ElementInfo, screenshot string, designTokens *DesignTokens) ([]DOMChange, error) {
+	if len(elements) == 0 {
+		return nil, fmt.Errorf("no elements provided")
+	}
+
+	// Build selected element info (first element - the one user clicked)
+	selectedEl := elements[0]
+	selectedElDesc := selectedEl.TagName
+	if selectedEl.ID != "" {
+		selectedElDesc += fmt.Sprintf(" id='%s'", selectedEl.ID)
+	}
+	if selectedEl.Classes != "" {
+		selectedElDesc += fmt.Sprintf(" class='%s'", selectedEl.Classes)
+	}
+	if selectedEl.InnerText != "" && len(selectedEl.InnerText) < 50 {
+		selectedElDesc += fmt.Sprintf(" text='%s'", selectedEl.InnerText)
+	}
+
+	// Build additional context elements (if any)
+	var additionalElementsDesc string
+	if len(elements) > 1 {
+		for i := 1; i < len(elements); i++ {
+			el := elements[i]
+			additionalElementsDesc += fmt.Sprintf("%d. %s (selector: %s)\n", i+1, el.TagName, el.Selector)
+			if el.ID != "" {
+				additionalElementsDesc += fmt.Sprintf("   ID: %s\n", el.ID)
+			}
+			if el.Classes != "" {
+				additionalElementsDesc += fmt.Sprintf("   Classes: %s\n", el.Classes)
+			}
+			if el.InnerText != "" && len(el.InnerText) < 100 {
+				additionalElementsDesc += fmt.Sprintf("   Text: %s\n", el.InnerText)
+			}
 		}
-		if el.Classes != "" {
-			elementsDesc += fmt.Sprintf("   Classes: %s\n", el.Classes)
+	} else {
+		additionalElementsDesc = "(none)\n"
+	}
+
+	// Build design tokens context string
+	var designTokensDesc string
+	if designTokens != nil {
+		designTokensDesc = "\nDesign System (CSS Custom Properties):\n\n"
+
+		if len(designTokens.Colors) > 0 {
+			designTokensDesc += "Colors:\n"
+			for name, value := range designTokens.Colors {
+				designTokensDesc += fmt.Sprintf("  %s: %s\n", name, value)
+			}
+			designTokensDesc += "\n"
 		}
-		if el.InnerText != "" && len(el.InnerText) < 100 {
-			elementsDesc += fmt.Sprintf("   Text: %s\n", el.InnerText)
+
+		if len(designTokens.Spacing) > 0 {
+			designTokensDesc += "Spacing:\n"
+			for name, value := range designTokens.Spacing {
+				designTokensDesc += fmt.Sprintf("  %s: %s\n", name, value)
+			}
+			designTokensDesc += "\n"
+		}
+
+		if len(designTokens.Typography) > 0 {
+			designTokensDesc += "Typography:\n"
+			for name, value := range designTokens.Typography {
+				designTokensDesc += fmt.Sprintf("  %s: %s\n", name, value)
+			}
+			designTokensDesc += "\n"
 		}
 	}
 
@@ -217,14 +277,17 @@ func (c *Client) GeneratePreview(instruction string, elements []ElementInfo, scr
 
 User instruction: "%s"
 
-Target elements (%d):
-%s
+**SELECTED ELEMENT (the user clicked on this):**
+1. %s (selector: %s)
 
+Additional context elements:
+%s
+%s
 **CRITICAL: This is PREVIEW MODE. Return ONLY a JSON object. Do NOT write explanations. Do NOT use markdown code blocks.**
 
 Your task:
 1. Analyze the user's instruction: "%s"
-2. Determine what DOM changes are needed to fulfill this instruction
+2. **Apply changes to the SELECTED ELEMENT above (element #1 that the user clicked on)**
 3. Return a JSON object with this EXACT structure:
 
 {
@@ -241,16 +304,20 @@ Supported actions:
 - "setHTML": Change HTML content (value = new HTML)
 - "setStyle": Change inline style (property = CSS property name, value = CSS value)
 - "setAttribute": Set attribute (attribute = attr name, value = attr value)
+- "remove": Remove/delete the element from DOM (no value needed)
+- "hide": Hide element by setting display:none (no value needed)
 
 Rules:
 1. Return ONLY the JSON object - no explanations before or after
 2. Do NOT wrap in markdown code blocks (no triple-backticks or json keyword)
-3. Use proper CSS selectors from the elements above
+3. **Use the SELECTED ELEMENT's selector in your changes (the one the user clicked on)**
 4. Be specific and intentional with changes
 5. Prefer CSS classes over inline styles when possible
-6. If the instruction is unclear, make reasonable assumptions
+6. **IMPORTANT: Use the design system tokens above for colors, spacing, and typography**
+7. When setting styles, prefer CSS custom properties (var(--token-name)) over hardcoded values
+8. If the user says "this button" or "this element", they mean the SELECTED ELEMENT above
 
-Return the JSON now:`, instruction, len(elements), elementsDesc, instruction)
+Return the JSON now:`, instruction, selectedElDesc, selectedEl.Selector, additionalElementsDesc, designTokensDesc, instruction)
 
 	// Build content array (text + optional image)
 	contentArray := []Content{

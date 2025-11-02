@@ -225,7 +225,11 @@ body[data-vc-mode="edit"] .vc-drag-handles > div {
 }
 
 body[data-vc-mode="edit"] .vc-hover-drag-handle {
-  cursor: move !important;
+  cursor: grab !important;
+}
+
+body[data-vc-mode="edit"] .vc-hover-drag-handle:active {
+  cursor: grabbing !important;
 }
 
 /* Reorder Mode - vertical reordering cursor */
