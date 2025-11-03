@@ -85,7 +85,7 @@ func NewClient(apiKey string) *Client {
 	return &Client{
 		APIKey: apiKey,
 		HTTPClient: &http.Client{
-			Timeout: 60 * time.Second, // 60 second timeout for API calls
+			Timeout: 180 * time.Second, // 3 minute timeout for API calls (Vision API can be slow with detailed analysis)
 		},
 	}
 }
