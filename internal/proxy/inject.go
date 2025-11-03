@@ -30,7 +30,7 @@ func InjectScript(resp *http.Response, baseURL string) error {
 	// 4. inject.js (main application script - deferred)
 	// 5. Alpine.js (must load last with defer)
 	injection := fmt.Sprintf(`
-	<!-- Visual Claude - Alpine.js + Tailwind CSS + Custom Scripts -->
+	<!-- Layrr - Alpine.js + Tailwind CSS + Custom Scripts -->
 	<script src="%s/tailwind.min.js"></script>
 	<link rel="stylesheet" href="%s/inject.css">
 	<script src="%s/inject-utils.js"></script>

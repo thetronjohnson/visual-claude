@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/thetronjohnson/visual-claude/internal/tui"
+	"github.com/thetronjohnson/layrr/internal/tui"
 )
 
 // Manager manages Claude Code execution using --print mode

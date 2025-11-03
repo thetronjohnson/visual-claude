@@ -365,7 +365,7 @@ The selected element is a CHILD ELEMENT (%s). When adding new elements:
 	}
 
 	// Build prompt requesting structured JSON
-	prompt := fmt.Sprintf(`VISUAL CLAUDE - AI PREVIEW MODE
+	prompt := fmt.Sprintf(`LAYRR - AI PREVIEW MODE
 
 User instruction: "%s"
 

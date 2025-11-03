@@ -1,7 +1,7 @@
 .PHONY: build install clean test run help
 
 # Binary name
-BINARY_NAME=visual-claude
+BINARY_NAME=layrr
 
 # Build directory
 BUILD_DIR=./build
@@ -21,7 +21,7 @@ LDFLAGS=-ldflags "-s -w"
 all: build
 
 help:
-	@echo "Visual Claude - Makefile targets:"
+	@echo "Layrr - Makefile targets:"
 	@echo ""
 	@echo "  make build        Build the binary"
 	@echo "  make install      Install to /usr/local/bin"
@@ -39,7 +39,7 @@ deps:
 build: deps
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/visual-claude
+	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/layrr
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 install: build

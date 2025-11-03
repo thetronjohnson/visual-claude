@@ -1,4 +1,4 @@
-# Visual Claude
+# Layrr
 
 A universal visual editor for [Claude Code](https://claude.com/claude-code) that works like Elementor or Framer but on **any website**. Select, drag, resize, and edit UI elements visually or with natural language instructions - Claude applies changes intelligently to your codebase.
 
@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/247f1e25-06d2-4065-8331-bca3e516c34e
 
 ## Description
 
-Visual Claude combines visual editing with AI-powered code generation, enabling you to:
+Layrr combines visual editing with AI-powered code generation, enabling you to:
 - **Visual Edit Mode**: Drag and resize elements with live preview, commit changes through Claude Code
 - **Design-to-Code Mode**: Upload design images and let Claude generate production-ready components
 - **Text Edit Mode**: Select elements and modify their text content directly in the browser
@@ -48,9 +48,9 @@ Built with Go, it acts as a reverse proxy between your browser and dev server, i
 ### Quick Start
 
 1. **Start your dev server** (e.g., `npm run dev`)
-2. **Run Visual Claude:**
+2. **Run Layrr:**
    ```bash
-   visual-claude
+   layrr
    ```
 3. **Open your browser** at `http://localhost:9999` (or your configured proxy port)
 4. **Choose an editing mode** from the bottom control bar
@@ -94,7 +94,7 @@ Built with Go, it acts as a reverse proxy between your browser and dev server, i
 ### Available Flags
 
 ```bash
-visual-claude [options]
+layrr [options]
 
 Options:
   -proxy-port     Proxy server port (default: 9999)
@@ -108,40 +108,43 @@ Options:
 
 ```bash
 # Auto-detect dev server
-visual-claude
+layrr
 
 # Specify dev server port
-visual-claude -target-port 3000
+layrr -target-port 3000
 
 # Custom proxy port and project directory
-visual-claude -proxy-port 8888 -dir ~/projects/my-app
+layrr -proxy-port 8888 -dir ~/projects/my-app
 ```
 
 ## Installation
 
 ### Prerequisites
 
+- **macOS** (Intel or Apple Silicon)
 - **Go 1.21+** - [Install Go](https://go.dev/doc/install)
 - **Claude Code** - [Install Claude Code](https://docs.claude.com/claude-code)
 - **Running dev server** - Any local web server (Vite, webpack, Next.js, etc.)
 
-### Build from Source
+### Quick Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/thetronjohnson/visual-claude.git
-cd visual-claude
+curl -fsSL https://layrr.dev/install.sh | bash
+```
 
-# Build the binary
-make build
+Or manually:
 
-# Install to /usr/local/bin
+```bash
+git clone https://github.com/thetronjohnson/layrr.git
+cd layrr
 make install
 ```
 
+This will build the binary and install it to `/usr/local/bin/layrr`.
+
 ## Dependencies
 
-Visual Claude uses these Go packages:
+Layrr uses these Go packages:
 
 - **[gorilla/websocket](https://github.com/gorilla/websocket)** - WebSocket connections for browser communication
 - **[fsnotify/fsnotify](https://github.com/fsnotify/fsnotify)** - File system watching for hot reload
@@ -162,8 +165,8 @@ Visual Claude uses these Go packages:
 ### Project Structure
 
 ```
-visual-claude/
-├── cmd/visual-claude/        # CLI entry point
+layrr/
+├── cmd/layrr/                # CLI entry point
 │   └── main.go
 ├── internal/
 │   ├── pty/                  # Claude Code execution & streaming
@@ -204,10 +207,10 @@ make test
 make clean
 
 # Run with verbose output
-go run cmd/visual-claude/main.go -verbose
+go run cmd/layrr/main.go -verbose
 
 # Build for release
-go build -ldflags="-s -w" -o visual-claude cmd/visual-claude/main.go
+go build -ldflags="-s -w" -o layrr cmd/layrr/main.go
 ```
 
 ### How It Works

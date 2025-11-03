@@ -3,7 +3,7 @@ package generator
 import (
 	"fmt"
 
-	"github.com/thetronjohnson/visual-claude/internal/analyzer"
+	"github.com/thetronjohnson/layrr/internal/analyzer"
 )
 
 // BuildPrompt creates a detailed prompt for code generation based on project context

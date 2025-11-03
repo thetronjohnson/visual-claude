@@ -12,13 +12,13 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/thetronjohnson/visual-claude/internal/bridge"
-	"github.com/thetronjohnson/visual-claude/internal/claude"
-	"github.com/thetronjohnson/visual-claude/internal/config"
-	"github.com/thetronjohnson/visual-claude/internal/proxy"
-	"github.com/thetronjohnson/visual-claude/internal/status"
-	"github.com/thetronjohnson/visual-claude/internal/tui"
-	"github.com/thetronjohnson/visual-claude/internal/watcher"
+	"github.com/thetronjohnson/layrr/internal/bridge"
+	"github.com/thetronjohnson/layrr/internal/claude"
+	"github.com/thetronjohnson/layrr/internal/config"
+	"github.com/thetronjohnson/layrr/internal/proxy"
+	"github.com/thetronjohnson/layrr/internal/status"
+	"github.com/thetronjohnson/layrr/internal/tui"
+	"github.com/thetronjohnson/layrr/internal/watcher"
 )
 
 func main() {
@@ -129,7 +129,7 @@ func ensureAPIKey(projectDir string) error {
 
 	// API key not found, prompt user
 	fmt.Println("\n⚠️  Anthropic API key not found")
-	fmt.Println("Visual Claude needs your API key for design-to-code features.")
+	fmt.Println("Layrr needs your API key for design-to-code features.")
 	fmt.Println("\nYou can find your API key at: https://console.anthropic.com/settings/keys")
 	fmt.Print("\nPaste your API key (sk-ant-...): ")
 

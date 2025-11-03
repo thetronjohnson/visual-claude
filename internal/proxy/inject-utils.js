@@ -1,4 +1,4 @@
-// Visual Claude - Utility Functions and Constants
+// Layrr - Utility Functions and Constants
 (function() {
   'use strict';
 
@@ -36,11 +36,11 @@
     EDIT_MODE_KEY: 'vc-edit-mode',
 
     // WebSocket Endpoints
-    WS_RELOAD_PATH: '/__visual-claude/ws/reload',
-    WS_MESSAGE_PATH: '/__visual-claude/ws/message',
+    WS_RELOAD_PATH: '/__layrr/ws/reload',
+    WS_MESSAGE_PATH: '/__layrr/ws/message',
 
     // Cursor
-    CURSOR_URL: '/__visual-claude/cursor.svg',
+    CURSOR_URL: '/__layrr/cursor.svg',
     CURSOR_HOTSPOT: '8 6',
 
     // Editable Tags
@@ -293,7 +293,7 @@
         });
 
       } catch (err) {
-        console.error('[Visual Claude] Failed to extract design tokens:', err);
+        console.error('[Layrr] Failed to extract design tokens:', err);
       }
 
       return tokens;
@@ -309,7 +309,7 @@
       let depth = 0;
 
       while (element && depth < window.VCConstants.MAX_ELEMENT_DEPTH) {
-        // Skip if it's a Visual Claude UI element
+        // Skip if it's a Layrr UI element
         if (element.closest(window.VCConstants.VC_UI_SELECTOR)) {
           return null;
         }
@@ -379,7 +379,7 @@
           return canvas.toDataURL('image/png').split(',')[1];
         }
       } catch (err) {
-        console.error('[Visual Claude] Screenshot capture failed:', err);
+        console.error('[Layrr] Screenshot capture failed:', err);
         return '';
       }
     },
@@ -787,5 +787,5 @@
     }
   };
 
-  console.log('[Visual Claude Utils] Loaded ✓');
+  console.log('[Layrr Utils] Loaded ✓');
 })();

@@ -1,4 +1,4 @@
-module github.com/thetronjohnson/visual-claude
+module github.com/thetronjohnson/layrr
 
 go 1.24.4
 

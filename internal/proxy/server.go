@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/thetronjohnson/visual-claude/internal/ai"
-	"github.com/thetronjohnson/visual-claude/internal/analyzer"
-	"github.com/thetronjohnson/visual-claude/internal/bridge"
-	"github.com/thetronjohnson/visual-claude/internal/config"
-	"github.com/thetronjohnson/visual-claude/internal/watcher"
+	"github.com/thetronjohnson/layrr/internal/ai"
+	"github.com/thetronjohnson/layrr/internal/analyzer"
+	"github.com/thetronjohnson/layrr/internal/bridge"
+	"github.com/thetronjohnson/layrr/internal/config"
+	"github.com/thetronjohnson/layrr/internal/watcher"
 )
 
 //go:embed inject.js inject-utils.js inject.css alpine.min.js tailwind.min.js
@@ -75,7 +75,7 @@ func (s *Server) Start() error {
 
 	// Modify responses to inject our scripts and styles
 	proxy.ModifyResponse = func(resp *http.Response) error {
-		return InjectScript(resp, "/__visual-claude")
+		return InjectScript(resp, "/__layrr")
 	}
 
 	// Suppress "context canceled" errors that occur during normal operation
@@ -93,20 +93,20 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
 	// Serve all client assets
-	mux.HandleFunc("/__visual-claude/alpine.min.js", s.handleAsset("alpine.min.js", "application/javascript"))
-	mux.HandleFunc("/__visual-claude/tailwind.min.js", s.handleAsset("tailwind.min.js", "application/javascript"))
-	mux.HandleFunc("/__visual-claude/inject.css", s.handleAsset("inject.css", "text/css"))
-	mux.HandleFunc("/__visual-claude/inject-utils.js", s.handleAsset("inject-utils.js", "application/javascript"))
-	mux.HandleFunc("/__visual-claude/inject.js", s.handleAsset("inject.js", "application/javascript"))
+	mux.HandleFunc("/__layrr/alpine.min.js", s.handleAsset("alpine.min.js", "application/javascript"))
+	mux.HandleFunc("/__layrr/tailwind.min.js", s.handleAsset("tailwind.min.js", "application/javascript"))
+	mux.HandleFunc("/__layrr/inject.css", s.handleAsset("inject.css", "text/css"))
+	mux.HandleFunc("/__layrr/inject-utils.js", s.handleAsset("inject-utils.js", "application/javascript"))
+	mux.HandleFunc("/__layrr/inject.js", s.handleAsset("inject.js", "application/javascript"))
 
 	// Serve the custom cursor asset
-	mux.HandleFunc("/__visual-claude/cursor.svg", s.handleCursorAsset)
+	mux.HandleFunc("/__layrr/cursor.svg", s.handleCursorAsset)
 
 	// WebSocket endpoint for live reload
-	mux.HandleFunc("/__visual-claude/ws/reload", s.handleReloadWebSocket)
+	mux.HandleFunc("/__layrr/ws/reload", s.handleReloadWebSocket)
 
 	// WebSocket endpoint for messaging
-	mux.HandleFunc("/__visual-claude/ws/message", s.handleMessageWebSocket)
+	mux.HandleFunc("/__layrr/ws/message", s.handleMessageWebSocket)
 
 	// Proxy all other requests
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +120,7 @@ func (s *Server) Start() error {
 		Handler: mux,
 	}
 
-	fmt.Printf("🚀 Visual Claude proxy server starting on http://localhost%s\n", addr)
+	fmt.Printf("🚀 Layrr proxy server starting on http://localhost%s\n", addr)
 	fmt.Printf("   Proxying to: http://localhost:%d\n", s.targetPort)
 
 	return s.httpServer.ListenAndServe()

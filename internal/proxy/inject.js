@@ -1,4 +1,4 @@
-// Visual Claude - Alpine.js Component Architecture
+// Layrr - Alpine.js Component Architecture
 (function() {
   'use strict';
 
@@ -124,7 +124,7 @@
       // ============================================================================
 
       init() {
-        console.log('[Visual Claude] Initializing Alpine component...');
+        console.log('[Layrr] Initializing Alpine component...');
 
         // Initialize mode from localStorage
         const savedMode = localStorage.getItem(window.VCConstants.EDIT_MODE_KEY);
@@ -166,8 +166,8 @@
           }
         });
 
-        console.log('[Visual Claude] Initialized ✓');
-        console.log('[Visual Claude] Toggle modes using Cmd/Ctrl+Shift+E or the toolbar');
+        console.log('[Layrr] Initialized ✓');
+        console.log('[Layrr] Toggle modes using Cmd/Ctrl+Shift+E or the toolbar');
       },
 
       // ============================================================================
@@ -201,7 +201,7 @@
         document.addEventListener('click', this._boundHandlers.click, true);
         document.addEventListener('keydown', this._boundHandlers.keydown);
 
-        console.log('[Visual Claude] ✏️  Edit Mode enabled');
+        console.log('[Layrr] ✏️  Edit Mode enabled');
       },
 
       disableEditMode() {
@@ -241,7 +241,7 @@
           this.processingTimeout = null;
         }
 
-        console.log('[Visual Claude] 👁️  View Mode enabled');
+        console.log('[Layrr] 👁️  View Mode enabled');
       },
 
       toggleMode() {
@@ -311,7 +311,7 @@
         // Single click detection
         if (distance < window.VCConstants.CLICK_MAX_DISTANCE &&
             dragDuration < window.VCConstants.CLICK_MAX_DURATION) {
-          console.log('[Visual Claude] Single click detected');
+          console.log('[Layrr] Single click detected');
 
           if (this.clickTimeout) {
             clearTimeout(this.clickTimeout);
@@ -321,7 +321,7 @@
             const clickedElement = window.VCUtils.findElementUnderCursor(e.target);
 
             if (!clickedElement) {
-              console.log('[Visual Claude] No valid element found - deselecting');
+              console.log('[Layrr] No valid element found - deselecting');
               // Clicked on empty space - deselect current selection
               if (this.selectedElement) {
                 this.deselectElement();
@@ -331,7 +331,7 @@
 
             // Clicking on the same element that's already selected - do nothing (keep menu open)
             if (clickedElement === this.selectedElement) {
-              console.log('[Visual Claude] Same element clicked - maintaining selection');
+              console.log('[Layrr] Same element clicked - maintaining selection');
               return;
             }
 
@@ -351,18 +351,18 @@
 
         if (bounds.width < window.VCConstants.MIN_SELECTION_SIZE ||
             bounds.height < window.VCConstants.MIN_SELECTION_SIZE) {
-          console.log('[Visual Claude] Selection too small');
+          console.log('[Layrr] Selection too small');
           return;
         }
 
         const elements = window.VCUtils.getElementsInBounds(bounds);
 
         if (elements.length === 0) {
-          console.log('[Visual Claude] No elements found');
+          console.log('[Layrr] No elements found');
           return;
         }
 
-        console.log('[Visual Claude] Selection successful:', elements.length, 'elements');
+        console.log('[Layrr] Selection successful:', elements.length, 'elements');
         this.openInlineInput(e.clientX, e.clientY, bounds, elements);
       },
 
@@ -490,7 +490,7 @@
           // Clean up cursor classes
           document.body.classList.remove('vc-reorder-vertical', 'vc-reorder-horizontal', 'vc-free-drag-override');
 
-          console.log('[Visual Claude] Escape pressed - all selections cancelled');
+          console.log('[Layrr] Escape pressed - all selections cancelled');
         }
 
         // Action menu keyboard shortcuts (when action menu is visible)
@@ -633,7 +633,7 @@
 
       async sendInlineMessage() {
         if (!this.selectedElements.length || !this.inlineInputText.trim()) {
-          console.warn('[Visual Claude] Cannot send: no elements or instruction');
+          console.warn('[Layrr] Cannot send: no elements or instruction');
           return;
         }
 
@@ -644,7 +644,7 @@
         const targetElement = this.selectedElements[0];
 
         // DEBUG: Log what we're sending to AI
-        console.log('[Visual Claude] 🔍 DEBUG - Sending AI Preview:', {
+        console.log('[Layrr] 🔍 DEBUG - Sending AI Preview:', {
           instruction: instruction,
           targetElement: {
             tag: targetElement.tagName,
@@ -655,11 +655,11 @@
           elementInfo: elementsInfo[0],
         });
 
-        console.log('[Visual Claude] 🎯 Selector being sent to AI:', elementsInfo[0].selector);
+        console.log('[Layrr] 🎯 Selector being sent to AI:', elementsInfo[0].selector);
 
         // DEBUG: Log parent info
         if (elementsInfo[0].parent) {
-          console.log('[Visual Claude] 📦 Parent:', {
+          console.log('[Layrr] 📦 Parent:', {
             tag: elementsInfo[0].parent.tagName,
             classes: elementsInfo[0].parent.classes,
             selector: elementsInfo[0].parent.selector,
@@ -668,14 +668,14 @@
 
         // DEBUG: Log siblings
         if (elementsInfo[0].siblings && elementsInfo[0].siblings.length > 0) {
-          console.log('[Visual Claude] 👥 Siblings (' + elementsInfo[0].siblings.length + '):',
+          console.log('[Layrr] 👥 Siblings (' + elementsInfo[0].siblings.length + '):',
             elementsInfo[0].siblings.map(s => ({
               tag: s.tagName,
               classes: s.classes,
             }))
           );
         } else {
-          console.log('[Visual Claude] ⚠️ No siblings found');
+          console.log('[Layrr] ⚠️ No siblings found');
         }
 
         // Hide input and show loading state
@@ -700,11 +700,11 @@
           designTokens: designTokens,
         };
 
-        console.log('[Visual Claude] Requesting AI preview...');
+        console.log('[Layrr] Requesting AI preview...');
         if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
           this.messageWs.send(JSON.stringify(previewMessage));
         } else {
-          console.error('[Visual Claude] WebSocket not connected');
+          console.error('[Layrr] WebSocket not connected');
           this.setStatus('idle');
           return;
         }
@@ -721,19 +721,19 @@
 
       handleAIPreviewResult(data) {
         if (!this.pendingAIInstruction) {
-          console.warn('[Visual Claude] Received preview result but no pending instruction');
+          console.warn('[Layrr] Received preview result but no pending instruction');
           return;
         }
 
         if (data.status === 'error') {
-          console.error('[Visual Claude] AI preview error:', data.error);
+          console.error('[Layrr] AI preview error:', data.error);
           this.setStatus('idle');
           this.pendingAIInstruction = null;
           return;
         }
 
         if (data.status === 'success' && data.changes) {
-          console.log('[Visual Claude] Applying AI preview changes:', data.changes);
+          console.log('[Layrr] Applying AI preview changes:', data.changes);
 
           // Apply DOM changes
           const appliedChanges = this.applyDOMChanges(data.changes);
@@ -752,7 +752,7 @@
           const preview = `"${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`;
           this.addToHistory('ai', targetElement, changeData, preview);
 
-          console.log('[Visual Claude] AI preview applied and added to history');
+          console.log('[Layrr] AI preview applied and added to history');
           this.setStatus('idle');
         }
 
@@ -766,7 +766,7 @@
           try {
             const element = document.querySelector(change.selector);
             if (!element) {
-              console.warn('[Visual Claude] Element not found for selector:', change.selector);
+              console.warn('[Layrr] Element not found for selector:', change.selector);
               continue;
             }
 
@@ -839,14 +839,14 @@
                 break;
 
               default:
-                console.warn('[Visual Claude] Unknown change action:', change.action);
+                console.warn('[Layrr] Unknown change action:', change.action);
                 continue;
             }
 
             appliedChanges.push(applied);
-            console.log('[Visual Claude] Applied change:', applied);
+            console.log('[Layrr] Applied change:', applied);
           } catch (err) {
-            console.error('[Visual Claude] Error applying change:', change, err);
+            console.error('[Layrr] Error applying change:', change, err);
           }
         }
 
@@ -859,17 +859,17 @@
 
       openTextEditor(element) {
         if (!element) {
-          console.error('[Visual Claude] openTextEditor: No element provided');
+          console.error('[Layrr] openTextEditor: No element provided');
           return;
         }
 
-        console.log('[Visual Claude] Opening text editor for:', element.tagName);
+        console.log('[Layrr] Opening text editor for:', element.tagName);
 
         this.currentEditingElement = element;
         this.removeElementHighlight();
 
         const currentText = element.innerText.trim();
-        console.log('[Visual Claude] Current text:', currentText.substring(0, 50));
+        console.log('[Layrr] Current text:', currentText.substring(0, 50));
 
         this.textEditorValue = currentText;
         this.textEditorPreview = `Current: "${currentText.substring(0, 100)}${currentText.length > 100 ? '...' : ''}"`;
@@ -885,12 +885,12 @@
         this.textEditorStyle = `left: ${pos.left}px; top: ${pos.top}px;`;
         this.showTextEditor = true;
 
-        console.log('[Visual Claude] Text editor opened, showTextEditor =', this.showTextEditor);
-        console.log('[Visual Claude] Text editor style:', this.textEditorStyle);
+        console.log('[Layrr] Text editor opened, showTextEditor =', this.showTextEditor);
+        console.log('[Layrr] Text editor style:', this.textEditorStyle);
 
         this.$nextTick(() => {
           const input = document.querySelector('.vc-text-editor textarea');
-          console.log('[Visual Claude] Text editor input found:', !!input);
+          console.log('[Layrr] Text editor input found:', !!input);
           if (input) {
             input.focus();
             input.select();
@@ -928,7 +928,7 @@
         const preview = `"${oldText.substring(0, 30)}${oldText.length > 30 ? '...' : ''}" → "${newText.substring(0, 30)}${newText.length > 30 ? '...' : ''}"`;
         this.addToHistory('text', this.currentEditingElement, changeData, preview);
 
-        console.log('[Visual Claude] Text change applied and added to history');
+        console.log('[Layrr] Text change applied and added to history');
 
         this.hideTextEditor();
       },
@@ -950,7 +950,7 @@
         // Add paste listener
         document.addEventListener('paste', this.handleImagePaste.bind(this));
 
-        console.log('[Visual Claude] Design modal opened');
+        console.log('[Layrr] Design modal opened');
       },
 
       closeDesignModal() {
@@ -969,7 +969,7 @@
         this.analysisStep = '';
         this.currentDesignMessageId = null;
 
-        console.log('[Visual Claude] Design modal closed');
+        console.log('[Layrr] Design modal closed');
       },
 
       handleImageDrop(e) {
@@ -1001,7 +1001,7 @@
       },
 
       async processImage(file) {
-        console.log('[Visual Claude] Processing image:', file.name);
+        console.log('[Layrr] Processing image:', file.name);
 
         // Store the file type
         this.uploadedImageType = file.type; // e.g., "image/jpeg", "image/png"
@@ -1011,14 +1011,14 @@
         reader.onload = (e) => {
           this.imagePreview = e.target.result;
           this.uploadedImage = e.target.result.split(',')[1]; // Base64 without prefix
-          console.log('[Visual Claude] ✓ Image processed, type:', this.uploadedImageType);
+          console.log('[Layrr] ✓ Image processed, type:', this.uploadedImageType);
         };
         reader.readAsDataURL(file);
       },
 
       async analyzeAndExecute() {
         if (!this.uploadedImage || !this.designPrompt.trim()) {
-          console.warn('[Visual Claude] Cannot proceed: missing image or prompt');
+          console.warn('[Layrr] Cannot proceed: missing image or prompt');
           return;
         }
 
@@ -1033,12 +1033,12 @@
           prompt: this.designPrompt.trim(),
         };
 
-        console.log('[Visual Claude] Sending design for analysis...');
+        console.log('[Layrr] Sending design for analysis...');
 
         if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
           this.messageWs.send(JSON.stringify(message));
         } else {
-          console.error('[Visual Claude] ✗ Connection error');
+          console.error('[Layrr] ✗ Connection error');
           this.analysisError = 'Connection error. Please try again.';
           this.isAnalyzing = false;
           this.analysisStep = '';
@@ -1047,11 +1047,11 @@
 
       handleDesignProgress(data) {
         if (data.status === 'received') {
-          console.log('[Visual Claude] Design received, analyzing...');
+          console.log('[Layrr] Design received, analyzing...');
           this.currentDesignMessageId = data.id;
           this.analysisStep = 'analyzing';
         } else if (data.status === 'complete') {
-          console.log('[Visual Claude] Component generation complete!');
+          console.log('[Layrr] Component generation complete!');
           // Keep modal open and show completion
           this.analysisStep = 'complete';
 
@@ -1060,7 +1060,7 @@
             this.closeDesignModal();
           }, 1500);
         } else if (data.status === 'error') {
-          console.error('[Visual Claude] Design error:', data.error);
+          console.error('[Layrr] Design error:', data.error);
           this.analysisError = data.error || 'An error occurred. Please try again.';
           this.isAnalyzing = false;
           this.analysisStep = '';
@@ -1132,7 +1132,7 @@
           window.addEventListener('resize', this._resizeListener);
         }
 
-        console.log('[Visual Claude] Selected element:', window.VCUtils.getSelector(element));
+        console.log('[Layrr] Selected element:', window.VCUtils.getSelector(element));
       },
 
       deselectElement() {
@@ -1168,7 +1168,7 @@
         this.showActionMenu = true;
         this.updateActionMenuPosition();
 
-        console.log('[Visual Claude] Action menu shown for element');
+        console.log('[Layrr] Action menu shown for element');
       },
 
       hideActionMenu() {
@@ -1205,29 +1205,29 @@
       },
 
       actionMenuEdit() {
-        console.log('[Visual Claude] Action: Edit text');
+        console.log('[Layrr] Action: Edit text');
         if (!this.actionMenuElement) {
-          console.error('[Visual Claude] No element selected for editing');
+          console.error('[Layrr] No element selected for editing');
           return;
         }
 
         const element = this.actionMenuElement;
-        console.log('[Visual Claude] Editing element:', element.tagName, element.className);
+        console.log('[Layrr] Editing element:', element.tagName, element.className);
 
         // Check if element is text-editable
         if (window.VCUtils.isTextEditable(element)) {
-          console.log('[Visual Claude] Element is text-editable, opening text editor modal');
+          console.log('[Layrr] Element is text-editable, opening text editor modal');
           this.hideActionMenu();
           this.openTextEditor(element);
         } else {
-          console.log('[Visual Claude] Element is not text-editable, falling back to AI mode');
+          console.log('[Layrr] Element is not text-editable, falling back to AI mode');
           // Fall back to AI mode if not text-editable
           this.actionMenuAI();
         }
       },
 
       actionMenuMove() {
-        console.log('[Visual Claude] Action: Move element');
+        console.log('[Layrr] Action: Move element');
         if (!this.actionMenuElement) return;
 
         this.hideActionMenu();
@@ -1246,30 +1246,30 @@
         this.startDrag(fakeEvent, 'move');
 
         // Show a hint to the user
-        console.log('[Visual Claude] Move mode activated - drag the element');
+        console.log('[Layrr] Move mode activated - drag the element');
       },
 
       actionMenuResize() {
-        console.log('[Visual Claude] Action: Resize element');
+        console.log('[Layrr] Action: Resize element');
         if (!this.actionMenuElement) return;
 
         this.hideActionMenu();
 
         // Just hide the action menu and keep resize handles visible
         // User can now use the resize handles
-        console.log('[Visual Claude] Resize mode activated - use the handles');
+        console.log('[Layrr] Resize mode activated - use the handles');
       },
 
       actionMenuAI() {
-        console.log('[Visual Claude] Action: AI instructions');
+        console.log('[Layrr] Action: AI instructions');
         if (!this.actionMenuElement) {
-          console.error('[Visual Claude] No element selected for AI mode');
+          console.error('[Layrr] No element selected for AI mode');
           return;
         }
 
         // Store element reference before hiding menu (hideActionMenu sets it to null)
         const element = this.actionMenuElement;
-        console.log('[Visual Claude] Opening AI mode for:', element.tagName, element.className);
+        console.log('[Layrr] Opening AI mode for:', element.tagName, element.className);
 
         const rect = element.getBoundingClientRect();
         const bounds = {
@@ -1293,7 +1293,7 @@
 
       toggleHistoryPanel() {
         this.showHistoryPanel = !this.showHistoryPanel;
-        console.log('[Visual Claude] History panel:', this.showHistoryPanel ? 'shown' : 'hidden');
+        console.log('[Layrr] History panel:', this.showHistoryPanel ? 'shown' : 'hidden');
       },
 
       addToHistory(type, element, data, preview) {
@@ -1312,7 +1312,7 @@
         this.undoStack.push(change);
         this.redoStack = []; // Clear redo stack when new change is made
 
-        console.log('[Visual Claude] Added to history:', change);
+        console.log('[Layrr] Added to history:', change);
         return change;
       },
 
@@ -1320,7 +1320,7 @@
         const index = this.changeHistory.findIndex(c => c.id === changeId);
         if (index !== -1) {
           this.changeHistory.splice(index, 1);
-          console.log('[Visual Claude] Removed from history:', changeId);
+          console.log('[Layrr] Removed from history:', changeId);
         }
       },
 
@@ -1329,7 +1329,7 @@
         this.undoStack = [];
         this.redoStack = [];
         this.nextChangeId = 1;
-        console.log('[Visual Claude] History cleared');
+        console.log('[Layrr] History cleared');
       },
 
       toggleChangeSelection(changeId) {
@@ -1353,7 +1353,7 @@
 
       undo() {
         if (this.undoStack.length === 0) {
-          console.log('[Visual Claude] Nothing to undo');
+          console.log('[Layrr] Nothing to undo');
           return;
         }
 
@@ -1366,12 +1366,12 @@
         // Revert the DOM change
         this.revertChange(change);
 
-        console.log('[Visual Claude] Undo:', change);
+        console.log('[Layrr] Undo:', change);
       },
 
       redo() {
         if (this.redoStack.length === 0) {
-          console.log('[Visual Claude] Nothing to redo');
+          console.log('[Layrr] Nothing to redo');
           return;
         }
 
@@ -1384,14 +1384,14 @@
         // Re-apply the change
         this.reapplyChange(change);
 
-        console.log('[Visual Claude] Redo:', change);
+        console.log('[Layrr] Redo:', change);
       },
 
       revertChange(change) {
         // Find the element and revert its changes
         const element = document.querySelector(change.selector);
         if (!element) {
-          console.warn('[Visual Claude] Element not found for revert:', change.selector);
+          console.warn('[Layrr] Element not found for revert:', change.selector);
           return;
         }
 
@@ -1403,7 +1403,7 @@
         } else if (change.type === 'reorder') {
           // Revert reorder - move back to original position
           // This is complex, for now just log
-          console.log('[Visual Claude] Reorder revert not yet implemented');
+          console.log('[Layrr] Reorder revert not yet implemented');
         } else if (change.type === 'text') {
           // Revert text change
           if (change.data.oldText !== undefined) {
@@ -1447,7 +1447,7 @@
         // Find the element and re-apply changes
         const element = document.querySelector(change.selector);
         if (!element) {
-          console.warn('[Visual Claude] Element not found for reapply:', change.selector);
+          console.warn('[Layrr] Element not found for reapply:', change.selector);
           return;
         }
 
@@ -1460,7 +1460,7 @@
           }
         } else if (change.type === 'reorder') {
           // Re-apply reorder
-          console.log('[Visual Claude] Reorder reapply not yet implemented');
+          console.log('[Layrr] Reorder reapply not yet implemented');
         } else if (change.type === 'text') {
           // Re-apply text change
           if (change.data.newText !== undefined) {
@@ -1601,11 +1601,11 @@
       commitSelectedChanges() {
         const selected = this.getSelectedChanges();
         if (selected.length === 0) {
-          console.warn('[Visual Claude] No changes selected');
+          console.warn('[Layrr] No changes selected');
           return;
         }
 
-        console.log('[Visual Claude] Committing', selected.length, 'selected changes');
+        console.log('[Layrr] Committing', selected.length, 'selected changes');
 
         // Close history panel immediately
         this.showHistoryPanel = false;
@@ -1615,11 +1615,11 @@
 
       commitAllChanges() {
         if (this.changeHistory.length === 0) {
-          console.warn('[Visual Claude] No changes to commit');
+          console.warn('[Layrr] No changes to commit');
           return;
         }
 
-        console.log('[Visual Claude] Committing all', this.changeHistory.length, 'changes');
+        console.log('[Layrr] Committing all', this.changeHistory.length, 'changes');
 
         // Close history panel immediately
         this.showHistoryPanel = false;
@@ -1630,18 +1630,18 @@
       async commitChanges(changes) {
         // Estimate tokens
         const totalTokens = this.estimateTotalTokens(changes);
-        console.log('[Visual Claude] Total estimated tokens:', totalTokens);
+        console.log('[Layrr] Total estimated tokens:', totalTokens);
 
         try {
           // Check if we need to batch
           if (totalTokens > 6000) {
-            console.log('[Visual Claude] Creating batches...');
+            console.log('[Layrr] Creating batches...');
             const batches = this.createBatches(changes, 6000);
-            console.log('[Visual Claude] Split into', batches.length, 'batches');
+            console.log('[Layrr] Split into', batches.length, 'batches');
 
             // Process batches sequentially
             for (let i = 0; i < batches.length; i++) {
-              console.log(`[Visual Claude] Processing batch ${i + 1}/${batches.length}...`);
+              console.log(`[Layrr] Processing batch ${i + 1}/${batches.length}...`);
               await this.sendBatchToBackend(batches[i], i + 1, batches.length);
             }
           } else {
@@ -1650,13 +1650,13 @@
           }
 
           // All batches completed successfully
-          console.log('[Visual Claude] ✓ All changes committed successfully');
+          console.log('[Layrr] ✓ All changes committed successfully');
           this.setStatus('idle');
 
           // Clear history after successful commit
           this.clearHistory();
         } catch (error) {
-          console.error('[Visual Claude] ✗ Commit failed:', error);
+          console.error('[Layrr] ✗ Commit failed:', error);
           this.setStatus('idle');
 
           // Reopen history panel on error so user can retry
@@ -1723,14 +1723,14 @@
           });
 
           this.messageWs.send(JSON.stringify(message));
-          console.log(`[Visual Claude] ✓ Batch ${batchNumber}/${totalBatches} sent`);
+          console.log(`[Layrr] ✓ Batch ${batchNumber}/${totalBatches} sent`);
 
           // Wait for backend to complete this batch before proceeding
           try {
             await completionPromise;
-            console.log(`[Visual Claude] ✓ Batch ${batchNumber}/${totalBatches} completed`);
+            console.log(`[Layrr] ✓ Batch ${batchNumber}/${totalBatches} completed`);
           } catch (error) {
-            console.error(`[Visual Claude] ✗ Batch ${batchNumber}/${totalBatches} failed:`, error);
+            console.error(`[Layrr] ✗ Batch ${batchNumber}/${totalBatches} failed:`, error);
             throw error;
           }
 
@@ -1739,7 +1739,7 @@
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
         } else {
-          console.error('[Visual Claude] ✗ WebSocket not connected');
+          console.error('[Layrr] ✗ WebSocket not connected');
           throw new Error('WebSocket not connected');
         }
       },
@@ -1857,7 +1857,7 @@
               const isVertical = this.reorderMode.siblingArrangement.isVertical;
               document.body.classList.add(isVertical ? 'vc-reorder-vertical' : 'vc-reorder-horizontal');
 
-              console.log('[Visual Claude] Entered reorder mode');
+              console.log('[Layrr] Entered reorder mode');
             }
 
             const reorderTarget = window.VCUtils.getReorderTarget(
@@ -2118,7 +2118,7 @@
         this.reorderMode.newIndex = -1;
 
         if (wasActive) {
-          console.log('[Visual Claude] Exited reorder mode');
+          console.log('[Layrr] Exited reorder mode');
         }
       },
 
@@ -2242,7 +2242,7 @@
             }
           };
 
-          console.log('[Visual Claude] Stored reorder operation:', selector, change);
+          console.log('[Layrr] Stored reorder operation:', selector, change);
 
           // Add to history
           const preview = `Reordered from position ${this.reorderMode.originalIndex} to ${change.reorderData.toIndex}`;
@@ -2265,7 +2265,7 @@
           this.exitReorderMode();
         } else if (this.reorderMode.isActive && !this.reorderMode.currentTarget) {
           // INVALID REORDER DROP - Snap back to original position
-          console.log('[Visual Claude] Invalid reorder drop - snapping back to original position');
+          console.log('[Layrr] Invalid reorder drop - snapping back to original position');
 
           // Restore element to original position in DOM if it was moved
           if (this.dragHandle.originalParent && this.dragHandle.originalNextSibling) {
@@ -2301,7 +2301,7 @@
             }
           };
 
-          console.log('[Visual Claude] Stored transform/resize:', selector, change);
+          console.log('[Layrr] Stored transform/resize:', selector, change);
 
           // Add to history
           const preview = change.styles.transform ?
@@ -2357,7 +2357,7 @@
             clearTimeout(this.processingTimeout);
           }
           this.processingTimeout = setTimeout(() => {
-            console.warn('[Visual Claude] ⚠️  Processing timeout - reloading');
+            console.warn('[Layrr] ⚠️  Processing timeout - reloading');
             window.location.reload();
           }, window.VCConstants.PROCESSING_TIMEOUT);
 
@@ -2372,7 +2372,7 @@
           this.showStatusIndicator = true;
           this.isProcessing = false;
 
-          console.log('[Visual Claude] Task completed, reloading...');
+          console.log('[Layrr] Task completed, reloading...');
           setTimeout(() => {
             window.location.reload();
           }, window.VCConstants.RELOAD_DELAY);
@@ -2399,17 +2399,17 @@
         this.reloadWs.onmessage = (event) => {
           const data = JSON.parse(event.data);
           if (data.type === 'reload') {
-            console.log('[Visual Claude] Reloading page...');
+            console.log('[Layrr] Reloading page...');
             window.location.reload();
           }
         };
 
         this.reloadWs.onerror = (error) => {
-          console.error('[Visual Claude] Reload WebSocket error:', error);
+          console.error('[Layrr] Reload WebSocket error:', error);
         };
 
         this.reloadWs.onclose = () => {
-          console.log('[Visual Claude] Reload WebSocket closed, reconnecting...');
+          console.log('[Layrr] Reload WebSocket closed, reconnecting...');
           setTimeout(() => this.connectWebSockets(), window.VCConstants.WS_RECONNECT_DELAY);
         };
 
@@ -2417,13 +2417,13 @@
         this.messageWs = new WebSocket(window.VCUtils.getWebSocketURL(window.VCConstants.WS_MESSAGE_PATH));
 
         this.messageWs.onopen = () => {
-          console.log('[Visual Claude] Connected to Claude Code');
+          console.log('[Layrr] Connected to Claude Code');
         };
 
         this.messageWs.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('[Visual Claude] Message from server:', data);
+            console.log('[Layrr] Message from server:', data);
 
             // Handle design analysis progress
             if (this.currentDesignMessageId && data.id === this.currentDesignMessageId) {
@@ -2447,20 +2447,20 @@
 
             if (!hasPendingBatches) {
               if (data.id && data.id !== this.currentMessageId) {
-                console.warn('[Visual Claude] ⚠️  Ignoring stale message');
+                console.warn('[Layrr] ⚠️  Ignoring stale message');
                 return;
               }
 
               if (!this.currentMessageId && (data.status === 'complete' || data.status === 'error')) {
-                console.warn('[Visual Claude] ⚠️  Ignoring completion with no active request');
+                console.warn('[Layrr] ⚠️  Ignoring completion with no active request');
                 return;
               }
             }
 
             if (data.status === 'received') {
-              console.log('[Visual Claude] ✅ Server acknowledged');
+              console.log('[Layrr] ✅ Server acknowledged');
             } else if (data.status === 'complete') {
-              console.log('[Visual Claude] 🎉 Task completed');
+              console.log('[Layrr] 🎉 Task completed');
 
               // Check if this is a batch completion that needs to resolve a promise
               let isBatchOperation = false;
@@ -2483,7 +2483,7 @@
                 this.currentMessageId = null;
               }
             } else if (data.status === 'error') {
-              console.error('[Visual Claude] ❌ Error:', data.error);
+              console.error('[Layrr] ❌ Error:', data.error);
 
               // Check if this is a batch error that needs to reject a promise
               let isBatchOperation = false;
@@ -2512,7 +2512,7 @@
               }
             }
           } catch (err) {
-            console.error('[Visual Claude] Failed to parse message:', err);
+            console.error('[Layrr] Failed to parse message:', err);
             if (this.isProcessing) {
               setTimeout(() => window.location.reload(), 1000);
             }
@@ -2520,14 +2520,14 @@
         };
 
         this.messageWs.onerror = (error) => {
-          console.error('[Visual Claude] Message WebSocket error:', error);
+          console.error('[Layrr] Message WebSocket error:', error);
           if (this.isProcessing) {
             setTimeout(() => window.location.reload(), window.VCConstants.ERROR_RELOAD_DELAY);
           }
         };
 
         this.messageWs.onclose = () => {
-          console.log('[Visual Claude] Message WebSocket closed');
+          console.log('[Layrr] Message WebSocket closed');
           if (this.isProcessing) {
             setTimeout(() => window.location.reload(), window.VCConstants.ERROR_RELOAD_DELAY);
           }
@@ -2556,7 +2556,7 @@
     };
   };
 
-  console.log('[Visual Claude] Component defined ✓');
+  console.log('[Layrr] Component defined ✓');
 
   // ============================================================================
   // CREATE UI STRUCTURE WITH ALPINE DIRECTIVES
@@ -3131,5 +3131,5 @@
   // Append to body
   document.body.appendChild(app);
 
-  console.log('[Visual Claude] UI created ✓');
+  console.log('[Layrr] UI created ✓');
 })();

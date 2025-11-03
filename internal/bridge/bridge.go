@@ -7,9 +7,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/thetronjohnson/visual-claude/internal/claude"
-	"github.com/thetronjohnson/visual-claude/internal/status"
-	"github.com/thetronjohnson/visual-claude/internal/tui"
+	"github.com/thetronjohnson/layrr/internal/claude"
+	"github.com/thetronjohnson/layrr/internal/status"
+	"github.com/thetronjohnson/layrr/internal/tui"
 )
 
 // ElementInfo represents information about a selected HTML element
