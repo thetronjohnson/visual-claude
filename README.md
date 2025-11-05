@@ -125,9 +125,10 @@ layrr -proxy-port 8888 -dir ~/projects/my-app
 ### Prerequisites
 
 - **macOS** (Intel or Apple Silicon)
-- **Go 1.21+** - [Install Go](https://go.dev/doc/install)
 - **Claude Code** - [Install Claude Code](https://docs.claude.com/claude-code)
 - **Running dev server** - Any local web server (Vite, webpack, Next.js, etc.)
+
+**Note:** Go is only required if building from source. The install script downloads pre-built binaries.
 
 ### Quick Install
 
@@ -135,7 +136,14 @@ layrr -proxy-port 8888 -dir ~/projects/my-app
 curl -fsSL https://layrr.dev/install.sh | bash
 ```
 
-Or manually:
+This will:
+- Auto-detect your architecture (Intel or Apple Silicon)
+- Download the latest pre-built binary
+- Install to `/usr/local/bin/layrr`
+
+### Build from Source
+
+If you prefer to build from source:
 
 ```bash
 git clone https://github.com/thetronjohnson/layrr.git
@@ -143,7 +151,7 @@ cd layrr
 make install
 ```
 
-This will build the binary and install it to `/usr/local/bin/layrr`.
+**Requirements:** Go 1.21+ and Make
 
 ## Dependencies
 

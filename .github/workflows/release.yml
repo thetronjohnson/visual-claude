@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build for macOS Intel (amd64)
+        run: |
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o build/layrr-darwin-amd64 ./cmd/layrr
+
+      - name: Build for macOS Apple Silicon (arm64)
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o build/layrr-darwin-arm64 ./cmd/layrr
+
+      - name: Create checksums
+        run: |
+          cd build
+          shasum -a 256 layrr-darwin-amd64 > layrr-darwin-amd64.sha256
+          shasum -a 256 layrr-darwin-arm64 > layrr-darwin-arm64.sha256
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: Release ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            build/layrr-darwin-amd64
+            build/layrr-darwin-arm64
+            build/layrr-darwin-amd64.sha256
+            build/layrr-darwin-arm64.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

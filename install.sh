@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 echo ""
 echo -e "${BLUE}┌──────────────────────────────────────┐${NC}"
 echo -e "${BLUE}│                                      │${NC}"
-echo -e "${BLUE}│  ${GREEN}LAYRR${BLUE} - Visual Editor for Claude  │${NC}"
+echo -e "${BLUE}│         ${GREEN}LAYRR${BLUE} - Visual Editor       │${NC}"
 echo -e "${BLUE}│                                      │${NC}"
 echo -e "${BLUE}└──────────────────────────────────────┘${NC}"
 echo ""
@@ -26,45 +26,61 @@ if [ "$OS" != "darwin" ]; then
   exit 1
 fi
 
-# Check for Go
-if ! command -v go >/dev/null 2>&1; then
-  echo -e "${RED}✗ Go is not installed${NC}"
-  echo -e "  Install Go from: ${BLUE}https://go.dev/doc/install${NC}"
+# Detect architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then
+  ARCH="amd64"
+  ARCH_NAME="Intel"
+elif [ "$ARCH" = "arm64" ]; then
+  ARCH="arm64"
+  ARCH_NAME="Apple Silicon"
+else
+  echo -e "${RED}✗ Error: Unsupported architecture: $ARCH${NC}"
   exit 1
 fi
 
-GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
-echo -e "${BLUE}ℹ Detected: macOS with Go $GO_VERSION${NC}"
+echo -e "${BLUE}ℹ Detected: macOS $ARCH_NAME${NC}"
 echo ""
+
+# GitHub repository
+REPO="thetronjohnson/layrr"
+BINARY_NAME="layrr-darwin-${ARCH}"
+
+# Get latest release version
+echo -e "${YELLOW}→ Fetching latest release...${NC}"
+LATEST_VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' 2>/dev/null)
+
+if [ -z "$LATEST_VERSION" ]; then
+  echo -e "${RED}✗ Failed to fetch latest version${NC}"
+  echo -e "${YELLOW}  Tip: Check your internet connection or GitHub API limits${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✓ Latest version: $LATEST_VERSION${NC}"
+
+# Download URL
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_VERSION}/${BINARY_NAME}"
 
 # Create temp directory
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
-# Clone repository
-echo -e "${YELLOW}→ Cloning layrr repository...${NC}"
-if ! git clone --quiet https://github.com/thetronjohnson/layrr.git "$TMP_DIR/layrr" 2>/dev/null; then
-  echo -e "${RED}✗ Failed to clone repository${NC}"
+# Download binary
+echo -e "${YELLOW}→ Downloading layrr...${NC}"
+if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/layrr"; then
+  echo -e "${RED}✗ Download failed${NC}"
+  echo -e "${YELLOW}  Tried: $DOWNLOAD_URL${NC}"
   exit 1
 fi
-echo -e "${GREEN}✓ Cloned${NC}"
-
-# Build
-echo -e "${YELLOW}→ Building layrr...${NC}"
-cd "$TMP_DIR/layrr"
-if ! make build >/dev/null 2>&1; then
-  echo -e "${RED}✗ Build failed${NC}"
-  exit 1
-fi
-echo -e "${GREEN}✓ Built${NC}"
+echo -e "${GREEN}✓ Downloaded${NC}"
 
 # Install
 echo -e "${YELLOW}→ Installing to /usr/local/bin/layrr...${NC}"
 if [ -w "/usr/local/bin" ]; then
-  mv build/layrr /usr/local/bin/
+  mv "$TMP_DIR/layrr" /usr/local/bin/layrr
   chmod +x /usr/local/bin/layrr
 else
-  sudo mv build/layrr /usr/local/bin/
+  sudo mv "$TMP_DIR/layrr" /usr/local/bin/layrr
   sudo chmod +x /usr/local/bin/layrr
 fi
 echo -e "${GREEN}✓ Installed${NC}"
