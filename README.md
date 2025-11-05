@@ -5,12 +5,8 @@
 
 A universal visual editor that works like Elementor or Framer but on **any website**. Select, drag, resize, and edit UI elements visually or with natural language instructions - AI applies changes intelligently to your codebase.
 
-> **Note:** This project is not affiliated with or endorsed by Anthropic.
 
-
-
-https://github.com/user-attachments/assets/247f1e25-06d2-4065-8331-bca3e516c34e
-
+https://github.com/user-attachments/assets/43edc839-419b-47be-b3f2-8e754d993a86
 
 
 ## Description
