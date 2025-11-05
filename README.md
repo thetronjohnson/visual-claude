@@ -1,6 +1,9 @@
-# Layrr
+<div align="center">
+  <img src="assets/logo.svg" alt="Layrr Logo" width="60" height="36">
+  <h1>Layrr</h1>
+</div>
 
-A universal visual editor for [Claude Code](https://claude.com/claude-code) that works like Elementor or Framer but on **any website**. Select, drag, resize, and edit UI elements visually or with natural language instructions - Claude applies changes intelligently to your codebase.
+A universal visual editor that works like Elementor or Framer but on **any website**. Select, drag, resize, and edit UI elements visually or with natural language instructions - AI applies changes intelligently to your codebase.
 
 > **Note:** This project is not affiliated with or endorsed by Anthropic.
 
@@ -257,6 +260,6 @@ The AGPL-3.0 license ensures that:
 - If you modify and deploy this software on a server, you must make your modified source code available to users
 - Any derivative works must also be licensed under AGPL-3.0
 
-## Acknowledgments
+## About
 
-Powered by [Claude Code](https://claude.com/claude-code) from Anthropic.
+Layrr is a universal visual editor that brings design tool capabilities to any web application. Built with Go and powered by AI, it bridges the gap between visual design and code.
