@@ -266,4 +266,4 @@ The AGPL-3.0 license ensures that:
 
 ## About
 
-Layrr is a universal visual editor that brings design tool capabilities to any web application. Built with Go and powered by AI, it bridges the gap between visual design and code.
+Layrr is a universal visual editor that brings design tool capabilities to any web application. Built with [Go](https://go.dev/) and powered by [Claude](https://www.claude.com/), it bridges the gap between visual design and code.
