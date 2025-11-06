@@ -189,7 +189,7 @@ body[data-vc-mode="view"] .vc-status-indicator {
 /* Force custom cursor on all elements in Edit Mode */
 body[data-vc-mode="edit"],
 body[data-vc-mode="edit"] * {
-  cursor: url('/__visual-claude/cursor.svg') 8 6, auto !important;
+  cursor: url('/__layrr/cursor.svg') 8 6, auto !important;
 }
 
 /* Keep normal cursor for VC UI elements */
