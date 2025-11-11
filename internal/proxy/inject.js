@@ -26,7 +26,7 @@
       clickTimeout: null,
       processingTimeout: null,
       isEditMode: true,
-      pendingAIInstruction: null, // Stores AI instruction while waiting for preview
+      // pendingAIInstruction removed - AI now uses comment annotations instead of live preview
 
       // WebSockets
       reloadWs: null,
@@ -118,6 +118,10 @@
       historyIndex: -1, // For undo/redo (-1 means at latest)
       undoStack: [],
       redoStack: [],
+
+      // Batch operation tracking (Phase 3)
+      pendingBatchResolvers: {}, // Maps batch number to promise resolvers
+      batchIdMapping: {}, // Maps message ID to batch number
 
       // ============================================================================
       // INITIALIZATION
@@ -680,85 +684,108 @@
 
         // Hide input and show loading state
         this.hideInlineInput();
-        this.setStatus('processing', 'Getting AI preview...');
 
         // Extract design tokens from the page
         const designTokens = window.VCUtils.extractDesignTokens();
 
-        // PHASE 1: Get preview changes from Claude Code
-        const previewMessage = {
-          type: 'ai-preview',
-          instruction: instruction,
-          screenshot: screenshot,
-          bounds: {
-            x: bounds.left,
-            y: bounds.top,
-            width: bounds.width,
-            height: bounds.height,
-          },
-          elements: elementsInfo,
-          designTokens: designTokens,
-        };
-
-        console.log('[Layrr] Requesting AI preview...');
-        if (this.messageWs && this.messageWs.readyState === WebSocket.OPEN) {
-          this.messageWs.send(JSON.stringify(previewMessage));
-        } else {
-          console.error('[Layrr] WebSocket not connected');
-          this.setStatus('idle');
-          return;
-        }
-
-        // Store pending AI instruction while waiting for preview
-        this.pendingAIInstruction = {
+        // Instead of getting AI preview, just store the instruction and show annotation
+        const changeData = {
           instruction: instruction,
           screenshot: screenshot,
           bounds: { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height },
           elements: elementsInfo,
-          targetElement: targetElement,
+          elementCount: elementsInfo.length,
+          designTokens: designTokens,
         };
+
+        const preview = `"${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`;
+        this.addToHistory('ai', targetElement, changeData, preview);
+
+        // Show comment bubble annotation on the element
+        this.showCommentAnnotation(targetElement, instruction);
+
+        console.log('[Layrr] AI instruction added to history');
+        this.setStatus('idle');
       },
 
+      // Show Figma-style comment bubble annotation
+      showCommentAnnotation(element, instruction) {
+        // Create unique ID for this annotation
+        const annotationId = `vc-annotation-${Date.now()}`;
+
+        // Get element position
+        const rect = element.getBoundingClientRect();
+
+        // Create comment bubble container
+        const bubble = document.createElement('div');
+        bubble.id = annotationId;
+        bubble.className = 'vc-comment-bubble';
+        bubble.style.position = 'fixed';
+        bubble.style.left = `${rect.right + 10}px`;
+        bubble.style.top = `${rect.top}px`;
+        bubble.style.zIndex = '999999';
+
+        // Comment icon (speech bubble)
+        const icon = document.createElement('div');
+        icon.className = 'vc-comment-icon';
+        icon.innerHTML = `
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        `;
+
+        // Tooltip with instruction text
+        const tooltip = document.createElement('div');
+        tooltip.className = 'vc-comment-tooltip';
+        tooltip.textContent = instruction;
+
+        bubble.appendChild(icon);
+        bubble.appendChild(tooltip);
+
+        // Add to page
+        document.body.appendChild(bubble);
+
+        // Store reference on element for cleanup
+        if (!element.dataset.vcAnnotations) {
+          element.dataset.vcAnnotations = '';
+        }
+        element.dataset.vcAnnotations += annotationId + ',';
+
+        console.log('[Layrr] Added comment annotation:', annotationId);
+      },
+
+      // Remove all comment annotations
+      removeAllAnnotations() {
+        const annotations = document.querySelectorAll('.vc-comment-bubble');
+        annotations.forEach(annotation => annotation.remove());
+
+        // Clean up data attributes
+        document.querySelectorAll('[data-vc-annotations]').forEach(el => {
+          delete el.dataset.vcAnnotations;
+        });
+      },
+
+      // Remove annotation for specific element
+      removeAnnotationForElement(element) {
+        if (element.dataset.vcAnnotations) {
+          const annotationIds = element.dataset.vcAnnotations.split(',').filter(id => id);
+          annotationIds.forEach(id => {
+            const annotation = document.getElementById(id);
+            if (annotation) annotation.remove();
+          });
+          delete element.dataset.vcAnnotations;
+        }
+      },
+
+      // [DEPRECATED] Old AI preview code - no longer used
+      // AI instructions now show as comment annotations and are handled by Claude Code on commit
       handleAIPreviewResult(data) {
-        if (!this.pendingAIInstruction) {
-          console.warn('[Layrr] Received preview result but no pending instruction');
-          return;
-        }
-
-        if (data.status === 'error') {
-          console.error('[Layrr] AI preview error:', data.error);
-          this.setStatus('idle');
-          this.pendingAIInstruction = null;
-          return;
-        }
-
-        if (data.status === 'success' && data.changes) {
-          console.log('[Layrr] Applying AI preview changes:', data.changes);
-
-          // Apply DOM changes
-          const appliedChanges = this.applyDOMChanges(data.changes);
-
-          // Add to history with DOM changes and original instruction
-          const { instruction, screenshot, bounds, elements, targetElement } = this.pendingAIInstruction;
-          const changeData = {
-            instruction: instruction,
-            screenshot: screenshot,
-            bounds: bounds,
-            elements: elements,
-            elementCount: elements.length,
-            domChanges: appliedChanges, // Store what was actually applied for undo
-          };
-
-          const preview = `"${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`;
-          this.addToHistory('ai', targetElement, changeData, preview);
-
-          console.log('[Layrr] AI preview applied and added to history');
-          this.setStatus('idle');
-        }
-
-        this.pendingAIInstruction = null;
+        console.warn('[Layrr] handleAIPreviewResult called but AI preview is deprecated');
+        // No-op: AI instructions are now handled via comment annotations
       },
 
+      // [DEPRECATED] Old DOM change application - no longer used
       applyDOMChanges(changes) {
         const appliedChanges = [];
 
@@ -1319,6 +1346,13 @@
       removeFromHistory(changeId) {
         const index = this.changeHistory.findIndex(c => c.id === changeId);
         if (index !== -1) {
+          const change = this.changeHistory[index];
+
+          // If it's an AI change, remove its annotation
+          if (change.type === 'ai' && change.element) {
+            this.removeAnnotationForElement(change.element);
+          }
+
           this.changeHistory.splice(index, 1);
           console.log('[Layrr] Removed from history:', changeId);
         }
@@ -1329,6 +1363,14 @@
         this.undoStack = [];
         this.redoStack = [];
         this.nextChangeId = 1;
+
+        // Remove all comment annotations
+        this.removeAllAnnotations();
+
+        // Clear any pending batch operations
+        this.pendingBatchResolvers = {};
+        this.batchIdMapping = {};
+
         console.log('[Layrr] History cleared');
       },
 
@@ -1527,13 +1569,54 @@
         // Selector
         totalChars += change.selector.length;
 
-        // Data
-        totalChars += JSON.stringify(change.data).length;
+        // Data - safely stringify, avoiding circular references
+        try {
+          // Create a safe copy without DOM elements
+          const safeData = this.createSafeDataCopy(change.data);
+          totalChars += JSON.stringify(safeData).length;
+        } catch (e) {
+          // Fallback: rough estimate based on data keys
+          totalChars += 1000; // Conservative estimate
+        }
 
         // Instructions overhead
         totalChars += 200; // Base instruction text
 
         return Math.ceil(totalChars / 4);
+      },
+
+      // Helper to create a safe copy of data without circular references
+      createSafeDataCopy(data) {
+        if (!data) return {};
+
+        const safe = {};
+        for (const key in data) {
+          const value = data[key];
+
+          // Skip DOM elements and functions
+          if (value instanceof Element || typeof value === 'function') {
+            continue;
+          }
+
+          // Handle arrays that might contain DOM elements
+          if (Array.isArray(value)) {
+            // Filter out DOM elements from arrays
+            safe[key] = value.filter(item => !(item instanceof Element));
+          } else if (typeof value === 'object' && value !== null) {
+            // For objects, try to copy primitive properties only
+            try {
+              safe[key] = JSON.parse(JSON.stringify(value));
+            } catch (e) {
+              // Skip if circular or has circular refs
+              continue;
+            }
+          } else {
+            // Primitives are safe
+            safe[key] = value;
+          }
+        }
+
+        return safe;
       },
 
       estimateTotalTokens(changes) {
@@ -1690,8 +1773,12 @@
           return changeData;
         });
 
+        // Generate unique message ID for this batch
+        const messageId = Date.now() + Math.random();
+
         const message = {
           type: 'apply-visual-edits',
+          id: messageId,
           changes: changesForBackend,
           batch: {
             number: batchNumber,
@@ -1709,17 +1796,22 @@
             }, 120000); // 120 second timeout
 
             // Store the resolver so the WebSocket handler can call it
-            this.pendingBatchResolvers = this.pendingBatchResolvers || {};
-            this.pendingBatchResolvers[message.batch.number] = {
+            // Map both by batch number AND message ID for proper resolution
+            this.pendingBatchResolvers[batchNumber] = {
               resolve: (result) => {
                 clearTimeout(timeout);
+                delete this.batchIdMapping[messageId]; // Clean up mapping
                 resolve(result);
               },
               reject: (error) => {
                 clearTimeout(timeout);
+                delete this.batchIdMapping[messageId]; // Clean up mapping
                 reject(error);
               }
             };
+
+            // Map message ID to batch number so we can find the right resolver
+            this.batchIdMapping[messageId] = batchNumber;
           });
 
           this.messageWs.send(JSON.stringify(message));
@@ -2434,11 +2526,11 @@
               return;
             }
 
-            // Handle AI preview response
-            if (data.type === 'ai-preview-result') {
-              this.handleAIPreviewResult(data);
-              return;
-            }
+            // [DEPRECATED] AI preview is no longer used - instructions show as comment annotations
+            // if (data.type === 'ai-preview-result') {
+            //   this.handleAIPreviewResult(data);
+            //   return;
+            // }
 
             // Skip stale message checks if we have pending batch operations
             // Batches use their own tracking via pendingBatchResolvers
@@ -2464,15 +2556,17 @@
 
               // Check if this is a batch completion that needs to resolve a promise
               let isBatchOperation = false;
-              if (this.pendingBatchResolvers && data.id) {
-                // Find matching batch resolver
-                for (const [batchNumber, resolver] of Object.entries(this.pendingBatchResolvers)) {
-                  if (resolver) {
-                    resolver.resolve({ status: 'complete' });
-                    delete this.pendingBatchResolvers[batchNumber];
-                    isBatchOperation = true;
-                    break; // Only resolve one batch at a time
-                  }
+              if (this.pendingBatchResolvers && this.batchIdMapping && data.id) {
+                // Find the batch number for this message ID
+                const batchNumber = this.batchIdMapping[data.id];
+
+                if (batchNumber !== undefined && this.pendingBatchResolvers[batchNumber]) {
+                  console.log(`[Layrr] ✓ Resolving batch ${batchNumber}`);
+                  // Call the resolver - it will clean up both maps
+                  this.pendingBatchResolvers[batchNumber].resolve({ status: 'complete' });
+                  delete this.pendingBatchResolvers[batchNumber];
+                  // Note: batchIdMapping is already cleaned up by the resolver callback
+                  isBatchOperation = true;
                 }
               }
 
@@ -2487,15 +2581,17 @@
 
               // Check if this is a batch error that needs to reject a promise
               let isBatchOperation = false;
-              if (this.pendingBatchResolvers && data.id) {
-                // Find matching batch resolver
-                for (const [batchNumber, resolver] of Object.entries(this.pendingBatchResolvers)) {
-                  if (resolver) {
-                    resolver.reject(new Error(data.error || 'Unknown error'));
-                    delete this.pendingBatchResolvers[batchNumber];
-                    isBatchOperation = true;
-                    break; // Only reject one batch at a time
-                  }
+              if (this.pendingBatchResolvers && this.batchIdMapping && data.id) {
+                // Find the batch number for this message ID
+                const batchNumber = this.batchIdMapping[data.id];
+
+                if (batchNumber !== undefined && this.pendingBatchResolvers[batchNumber]) {
+                  console.log(`[Layrr] ✗ Rejecting batch ${batchNumber}`);
+                  // Call the rejecter - it will clean up both maps
+                  this.pendingBatchResolvers[batchNumber].reject(new Error(data.error || 'Unknown error'));
+                  delete this.pendingBatchResolvers[batchNumber];
+                  // Note: batchIdMapping is already cleaned up by the reject callback
+                  isBatchOperation = true;
                 }
               }
 

@@ -197,6 +197,8 @@ body[data-vc-mode="edit"] .vc-inline-input,
 body[data-vc-mode="edit"] .vc-inline-input *,
 body[data-vc-mode="edit"] .vc-text-editor,
 body[data-vc-mode="edit"] .vc-text-editor *,
+body[data-vc-mode="edit"] .vc-action-menu,
+body[data-vc-mode="edit"] .vc-action-menu *,
 body[data-vc-mode="edit"] .vc-mode-toolbar,
 body[data-vc-mode="edit"] .vc-mode-toolbar *,
 body[data-vc-mode="edit"] .vc-control-bar,
@@ -204,7 +206,9 @@ body[data-vc-mode="edit"] .vc-control-bar *,
 body[data-vc-mode="edit"] .vc-design-modal,
 body[data-vc-mode="edit"] .vc-design-modal *,
 body[data-vc-mode="edit"] .vc-history-panel,
-body[data-vc-mode="edit"] .vc-history-panel * {
+body[data-vc-mode="edit"] .vc-history-panel *,
+body[data-vc-mode="edit"] .vc-comment-bubble,
+body[data-vc-mode="edit"] .vc-comment-bubble * {
   cursor: auto !important;
 }
 
@@ -214,6 +218,7 @@ body[data-vc-mode="edit"] .vc-mode-toggle,
 body[data-vc-mode="edit"] .vc-action-menu-btn,
 body[data-vc-mode="edit"] .vc-history-panel button,
 body[data-vc-mode="edit"] .vc-history-panel input[type="checkbox"],
+body[data-vc-mode="edit"] .vc-comment-icon,
 body[data-vc-mode="edit"] button {
   cursor: pointer !important;
 }
@@ -408,4 +413,88 @@ body.vc-dragging-invalid * {
   font-size: var(--vc-font-size-sm);
   font-weight: 500;
   letter-spacing: -0.01em;
+}
+
+/* ============================================================================
+   COMMENT BUBBLE ANNOTATIONS - Figma-style comments for AI instructions
+   ============================================================================ */
+
+.vc-comment-bubble {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  animation: vc-fadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.vc-comment-icon {
+  width: 32px;
+  height: 32px;
+  background: #8b5cf6;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.vc-comment-icon:hover {
+  background: #7c3aed;
+  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.5);
+  transform: scale(1.05);
+}
+
+.vc-comment-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.vc-comment-tooltip {
+  position: absolute;
+  left: 44px;
+  top: 0;
+  background: white;
+  border: 1px solid var(--vc-gray-300);
+  border-radius: var(--vc-radius-md);
+  padding: 10px 12px;
+  max-width: 280px;
+  font-size: var(--vc-font-size-sm);
+  color: var(--vc-gray-700);
+  box-shadow: var(--vc-shadow-lg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 999999;
+  line-height: 1.5;
+}
+
+.vc-comment-bubble:hover .vc-comment-tooltip {
+  opacity: 1;
+}
+
+.vc-comment-tooltip::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 10px;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 6px solid var(--vc-gray-300);
+}
+
+.vc-comment-tooltip::after {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 10px;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 6px solid white;
 }
