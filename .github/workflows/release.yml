@@ -45,11 +45,21 @@ jobs:
         run: |
           GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o build/layrr-darwin-arm64 ./cmd/layrr
 
+      - name: Build for Linux amd64
+        run: |
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/layrr-linux-amd64 ./cmd/layrr
+
+      - name: Build for Linux arm64
+        run: |
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o build/layrr-linux-arm64 ./cmd/layrr
+
       - name: Create checksums
         run: |
           cd build
           shasum -a 256 layrr-darwin-amd64 > layrr-darwin-amd64.sha256
           shasum -a 256 layrr-darwin-arm64 > layrr-darwin-arm64.sha256
+          shasum -a 256 layrr-linux-amd64 > layrr-linux-amd64.sha256
+          shasum -a 256 layrr-linux-arm64 > layrr-linux-arm64.sha256
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -62,7 +72,11 @@ jobs:
           files: |
             build/layrr-darwin-amd64
             build/layrr-darwin-arm64
+            build/layrr-linux-amd64
+            build/layrr-linux-arm64
             build/layrr-darwin-amd64.sha256
             build/layrr-darwin-arm64.sha256
+            build/layrr-linux-amd64.sha256
+            build/layrr-linux-arm64.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

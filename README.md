@@ -5,12 +5,8 @@
 
 A universal visual editor that works like Elementor or Framer but on **any website**. Select, drag, resize, and edit UI elements visually or with natural language instructions - AI applies changes intelligently to your codebase.
 
-> **Note:** This project is not affiliated with or endorsed by Anthropic.
 
-
-
-https://github.com/user-attachments/assets/247f1e25-06d2-4065-8331-bca3e516c34e
-
+https://github.com/user-attachments/assets/43edc839-419b-47be-b3f2-8e754d993a86
 
 
 ## Description
@@ -270,4 +266,4 @@ The AGPL-3.0 license ensures that:
 
 ## About
 
-Layrr is a universal visual editor that brings design tool capabilities to any web application. Built with Go and powered by AI, it bridges the gap between visual design and code.
+Layrr is a universal visual editor that brings design tool capabilities to any web application. Built with [Go](https://go.dev/) and powered by [Claude](https://www.claude.com/), it bridges the gap between visual design and code.
