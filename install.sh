@@ -21,8 +21,9 @@ echo ""
 
 # Detect OS
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-if [ "$OS" != "darwin" ]; then
-  echo -e "${RED}✗ Error: This installer only supports macOS${NC}"
+if [ "$OS" != "darwin" ] && [ "$OS" != "linux" ]; then
+  echo -e "${RED}✗ Error: Unsupported operating system: $OS${NC}"
+  echo -e "${YELLOW}  Supported: macOS (darwin), Linux${NC}"
   exit 1
 fi
 
@@ -30,21 +31,35 @@ fi
 ARCH=$(uname -m)
 if [ "$ARCH" = "x86_64" ]; then
   ARCH="amd64"
-  ARCH_NAME="Intel"
-elif [ "$ARCH" = "arm64" ]; then
+  if [ "$OS" = "darwin" ]; then
+    ARCH_NAME="Intel"
+  else
+    ARCH_NAME="x86_64"
+  fi
+elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
   ARCH="arm64"
-  ARCH_NAME="Apple Silicon"
+  if [ "$OS" = "darwin" ]; then
+    ARCH_NAME="Apple Silicon"
+  else
+    ARCH_NAME="ARM64"
+  fi
 else
   echo -e "${RED}✗ Error: Unsupported architecture: $ARCH${NC}"
   exit 1
 fi
 
-echo -e "${BLUE}ℹ Detected: macOS $ARCH_NAME${NC}"
+# Display detected system
+if [ "$OS" = "darwin" ]; then
+  OS_NAME="macOS"
+else
+  OS_NAME="Linux"
+fi
+echo -e "${BLUE}ℹ Detected: $OS_NAME $ARCH_NAME${NC}"
 echo ""
 
 # GitHub repository
 REPO="thetronjohnson/layrr"
-BINARY_NAME="layrr-darwin-${ARCH}"
+BINARY_NAME="layrr-${OS}-${ARCH}"
 
 # Get latest release version
 echo -e "${YELLOW}→ Fetching latest release...${NC}"
@@ -75,14 +90,25 @@ fi
 echo -e "${GREEN}✓ Downloaded${NC}"
 
 # Install
-echo -e "${YELLOW}→ Installing to /usr/local/bin/layrr...${NC}"
-if [ -w "/usr/local/bin" ]; then
-  mv "$TMP_DIR/layrr" /usr/local/bin/layrr
-  chmod +x /usr/local/bin/layrr
+INSTALL_DIR="/usr/local/bin"
+echo -e "${YELLOW}→ Installing to $INSTALL_DIR/layrr...${NC}"
+
+# Try /usr/local/bin first
+if [ -w "$INSTALL_DIR" ]; then
+  mv "$TMP_DIR/layrr" "$INSTALL_DIR/layrr"
+  chmod +x "$INSTALL_DIR/layrr"
+elif [ -d "$INSTALL_DIR" ]; then
+  # Directory exists but not writable, try with sudo
+  sudo mv "$TMP_DIR/layrr" "$INSTALL_DIR/layrr"
+  sudo chmod +x "$INSTALL_DIR/layrr"
 else
-  sudo mv "$TMP_DIR/layrr" /usr/local/bin/layrr
-  sudo chmod +x /usr/local/bin/layrr
+  # /usr/local/bin doesn't exist, try to create it with sudo
+  echo -e "${YELLOW}  Creating $INSTALL_DIR...${NC}"
+  sudo mkdir -p "$INSTALL_DIR"
+  sudo mv "$TMP_DIR/layrr" "$INSTALL_DIR/layrr"
+  sudo chmod +x "$INSTALL_DIR/layrr"
 fi
+
 echo -e "${GREEN}✓ Installed${NC}"
 echo ""
 
