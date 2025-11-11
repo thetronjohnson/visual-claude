@@ -71,6 +71,9 @@ func (s *Server) Start() error {
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
 		req.Host = target.Host
+		// Remove Accept-Encoding to prevent compression issues with injection
+		// This ensures we get uncompressed HTML for easier manipulation
+		req.Header.Del("Accept-Encoding")
 	}
 
 	// Modify responses to inject our scripts and styles

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,12 +17,36 @@ func InjectScript(resp *http.Response, baseURL string) error {
 		return nil
 	}
 
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
+	// Check if response is compressed
+	contentEncoding := resp.Header.Get("Content-Encoding")
+	var bodyReader io.Reader = resp.Body
+
+	// Decompress if needed
+	if contentEncoding == "gzip" {
+		gzipReader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to create gzip reader: %w", err)
+		}
+		defer gzipReader.Close()
+		bodyReader = gzipReader
+	}
+
+	// Read the (potentially decompressed) response body
+	body, err := io.ReadAll(bodyReader)
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 	resp.Body.Close()
+
+	// Remove Content-Encoding and Transfer-Encoding headers since we're sending uncompressed
+	resp.Header.Del("Content-Encoding")
+	resp.Header.Del("Transfer-Encoding")
+
+	// Skip injection if body is empty or too small to be valid HTML
+	if len(body) < 10 {
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		return nil
+	}
 
 	// Create injection tags in correct order:
 	// 1. Tailwind CSS (non-blocking)
@@ -55,9 +80,6 @@ func InjectScript(resp *http.Response, baseURL string) error {
 	resp.Body = io.NopCloser(bytes.NewReader(modifiedBytes))
 	resp.ContentLength = int64(len(modifiedBytes))
 	resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(modifiedBytes)))
-
-	// Remove Content-Encoding header if present to avoid issues
-	resp.Header.Del("Content-Encoding")
 
 	return nil
 }
