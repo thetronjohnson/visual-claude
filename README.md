@@ -12,14 +12,7 @@
     <strong>Point at anything. Describe the change. Done.</strong>
   </p>
   <p>
-    Layrr is a visual AI code editor. Import a GitHub repo or start from a template, click any element in the running app, describe what you want in plain English, and AI edits the source code — live. Push changes back to GitHub when you're done.
-  </p>
-
-  <p>
-    <a href="https://layrr.dev">Website</a> &middot;
-    <a href="#get-started">Get Started</a> &middot;
-    <a href="#how-it-works">How It Works</a> &middot;
-    <a href="#cli">CLI</a>
+    Layrr is a CLI visual AI code editor. Run it against a local dev server, click any element in the browser, describe what you want in plain English, and an AI agent edits the source code.
   </p>
 
   <p>
@@ -30,50 +23,65 @@
 
 ---
 
-## Why Layrr
+## Usage
 
-AI coding tools are powerful, but you still have to describe *where* to make the change — which file, which component, which line. Layrr skips all of that. You point at the thing on screen, say what you want, and the code changes.
+Start your app's dev server first:
 
-**No context-switching.** You stay in the browser, looking at the actual app. No jumping between editor tabs, no grepping for the right file, no copy-pasting selectors into a prompt.
-
-**Every edit is a git commit.** Each AI change is auto-committed with a `[layrr]` prefix. Preview how the app looked at any past edit, or revert to a previous version in one click. You always have a clean undo path.
-
-**Works with any framework.** React, Next.js, Vue, Nuxt, Svelte, SvelteKit, Solid, Astro, Vite — Layrr maps clicked elements back to source files across all of them.
-
-## Get Started
-
-Go to [layrr.dev](https://layrr.dev) and sign up. You can:
-
-- **Import a GitHub repo** — Layrr clones it, spins up a dev server, and opens the visual editor. When you're done, push your changes back to GitHub.
-- **Start from a template** — Describe what you want to build in plain English. Layrr generates a working Next.js app and drops you into the editor to keep iterating visually.
-
-## How It Works
-
-```
-You click an element          Layrr figures out             AI edits the
-in the browser          →     the source file + line    →   actual code
-                                                            ↓
-You see it instantly    ←     Dev server hot reloads    ←   Saved & committed
+```bash
+pnpm dev
 ```
 
-Click any element on the page to select it. Type what you want to change. The AI reads the source file, makes targeted edits, and your dev server hot-reloads the result instantly.
-
-**Multi-select** — Shift+click to select multiple elements and apply one instruction to all of them.
-
-**History** — Open the history panel to preview how the app looked at any past edit, or permanently revert to a previous version.
-
-**Publish** — Push your changes to a GitHub branch when you're ready. Share a live preview link with anyone, protected by a password you set.
-
-## CLI
-
-Layrr also ships as an open-source CLI you can run against any local dev server.
+Then run Layrr against that port:
 
 ```bash
 npx layrr --port 3000
 ```
 
-See the [CLI docs](packages/cli/README.md) for setup and options.
+For a local checkout:
+
+```bash
+pnpm install
+pnpm build
+node dist/cli.js --port 3000
+```
+
+## Options
+
+```bash
+layrr --port <number> [project-root] [options]
+```
+
+| Option | Description |
+| --- | --- |
+| `-p, --port <number>` | Local dev server port. Required. |
+| `--proxy-port <number>` | Layrr proxy port. Defaults to `4567`. |
+| `--agent <name>` | AI agent to use: `claude` or `codex`. |
+| `--no-open` | Do not open the browser automatically. |
+| `-h, --help` | Show help. |
+
+## Agents
+
+Layrr supports:
+
+- `claude` - Claude Code
+- `codex` - Codex CLI
+
+If no agent is configured, Layrr prompts you to pick one.
+
+## Git History
+
+Layrr uses git as its undo path:
+
+- initializes a git repo if needed
+- creates an initial snapshot when needed
+- commits successful edits with a `[layrr]` prefix
+- keeps pre-existing dirty files out of Layrr edit commits
+- lets the overlay preview and revert Layrr edits
+
+## Repository
+
+This repository is the CLI package.
 
 ## License
 
-MIT — Built by [Kiran Johns](https://kiranjohns.com)
+MIT
