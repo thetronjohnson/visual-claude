@@ -31,17 +31,10 @@ Layrr sits between your browser and local dev server. It injects a small overlay
 
 ## Install
 
-Run Layrr directly with `npx`:
-
-```bash
-npx layrr --port 3000
-```
-
-Or install it globally:
+Install Layrr globally:
 
 ```bash
 npm install -g layrr
-layrr --port 3000
 ```
 
 ## Usage
@@ -55,7 +48,7 @@ pnpm dev
 Then run Layrr against the dev server port:
 
 ```bash
-npx layrr --port 3000
+layrr --port 3000
 ```
 
 Layrr opens a proxied version of your app at `http://localhost:4567`.
@@ -104,7 +97,7 @@ If no agent is configured, Layrr prompts you to pick one.
 To configure Gemini without starting a session:
 
 ```bash
-npx layrr --configure-gemini
+layrr --configure-gemini
 ```
 
 ## Git History
