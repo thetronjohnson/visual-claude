@@ -9,10 +9,10 @@
   <h1>layrr</h1>
 
   <p>
-    <strong>Point at anything. Describe the change. Done.</strong>
+    <strong>Point, click, and edit any web app with AI</strong>
   </p>
   <p>
-    Layrr is a CLI visual AI code editor. Run it against a local dev server, click any element in the browser, describe what you want in plain English, and an AI agent edits the source code.
+    Layrr lets you click an element in your running web app, describe the change in plain English, and send the exact source location to Claude Code, Codex CLI, or Gemini via Pi.
   </p>
 
   <p>
@@ -23,19 +23,49 @@
 
 ---
 
+## The problem
+
+You can see the issue in the browser: the button is too wide, the copy is wrong, the spacing is off, or the component needs a quick behavior change. The slow part is finding the right file, line, and context before your coding agent can make a useful edit.
+
+Layrr sits between your browser and local dev server. It injects a small overlay, maps clicked elements back to source, and gives your coding agent the instruction plus the selected code location.
+
+## Install
+
+Run Layrr directly with `npx`:
+
+```bash
+npx layrr --port 3000
+```
+
+Or install it globally:
+
+```bash
+npm install -g layrr
+layrr --port 3000
+```
+
 ## Usage
 
-Start your app's dev server first:
+Start your app first:
 
 ```bash
 pnpm dev
 ```
 
-Then run Layrr against that port:
+Then run Layrr against the dev server port:
 
 ```bash
 npx layrr --port 3000
 ```
+
+Layrr opens a proxied version of your app at `http://localhost:4567`.
+
+In the browser:
+
+1. Click one or more elements.
+2. Describe the change you want.
+3. Let the selected coding agent edit the source.
+4. Preview or revert Layrr edits from the overlay history.
 
 For a local checkout:
 
@@ -56,6 +86,8 @@ layrr --port <number> [project-root] [options]
 | `-p, --port <number>` | Local dev server port. Required. |
 | `--proxy-port <number>` | Layrr proxy port. Defaults to `4567`. |
 | `--agent <name>` | AI agent to use: `claude`, `codex`, or `gemini`. |
+| `--gemini-model <model>` | Save and use a Gemini model, for example `gemini-2.5-flash`. |
+| `--configure-gemini` | Reconfigure the Gemini model and API key. |
 | `--no-open` | Do not open the browser automatically. |
 | `-h, --help` | Show help. |
 
@@ -69,6 +101,12 @@ Layrr supports:
 
 If no agent is configured, Layrr prompts you to pick one.
 
+To configure Gemini without starting a session:
+
+```bash
+npx layrr --configure-gemini
+```
+
 ## Git History
 
 Layrr uses git as its undo path:
@@ -81,7 +119,7 @@ Layrr uses git as its undo path:
 
 ## Repository
 
-This repository is the CLI package.
+This repository is the CLI package. Layrr is intentionally local and CLI-only: there is no hosted dashboard, process manager, deployment service, or template runtime in this package.
 
 ## License
 

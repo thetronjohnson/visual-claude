@@ -1,6 +1,6 @@
 {
   "name": "layrr",
-  "version": "2026.3.3",
+  "version": "2026.5.0",
   "description": "Point, click, and edit any web app with AI",
   "type": "module",
   "bin": {
