@@ -110,10 +110,6 @@ Layrr uses git as its undo path:
 - keeps pre-existing dirty files out of Layrr edit commits
 - lets the overlay preview and revert Layrr edits
 
-## Repository
-
-This repository is the CLI package. Layrr is intentionally local and CLI-only: there is no hosted dashboard, process manager, deployment service, or template runtime in this package.
-
 ## License
 
 MIT
