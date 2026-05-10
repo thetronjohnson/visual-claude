@@ -1,15 +1,40 @@
 import { join } from 'path';
 import { homedir } from 'os';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { createInterface } from 'readline/promises';
+import { stdin as input, stdout as output } from 'process';
 
-import type { AgentName } from './agents/index.js';
-import { AGENT_LIST, isValidAgent } from './agents/index.js';
+import { PUBLIC_AGENTS, type AgentName } from './agents/base.js';
+
+const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex CLI',
+  gemini: 'Gemini via Pi',
+};
+
+const AGENT_LIST = PUBLIC_AGENTS.map((name) => ({
+  name,
+  displayName: AGENT_DISPLAY_NAMES[name],
+}));
+
+function isValidAgent(agent: string): agent is AgentName {
+  return PUBLIC_AGENTS.includes(agent as AgentName);
+}
 
 const CONFIG_DIR = join(homedir(), '.layrr');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
+export interface PiProviderConfig {
+  provider: 'google';
+  model: string;
+  apiKey?: string;
+}
+
 interface LayrConfig {
   agent: AgentName;
+  pi?: {
+    gemini?: PiProviderConfig;
+  };
 }
 
 export function loadConfig(): LayrConfig | null {
@@ -33,11 +58,111 @@ export function saveConfig(config: LayrConfig): void {
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n');
 }
 
+export function getGeminiPiConfig(): PiProviderConfig | null {
+  return loadConfig()?.pi?.gemini || null;
+}
+
+export function setGeminiPiModel(model: string): void {
+  const config = loadConfig() || { agent: 'gemini' as AgentName };
+  saveConfig({
+    ...config,
+    agent: 'gemini',
+    pi: {
+      ...config.pi,
+      gemini: {
+        provider: 'google',
+        model,
+        apiKey: config.pi?.gemini?.apiKey,
+      },
+    },
+  });
+}
+
 export function resolveAgent(cliOverride?: string): AgentName | null {
   if (cliOverride && isValidAgent(cliOverride)) return cliOverride;
   const config = loadConfig();
   if (config) return config.agent;
   return null;
+}
+
+async function promptInput(question: string, defaultValue?: string): Promise<string> {
+  const wasRaw = input.isRaw;
+  input.setRawMode?.(false);
+  const rl = createInterface({ input, output, terminal: true });
+  const suffix = defaultValue ? ` (${defaultValue})` : '';
+  try {
+    const answer = await rl.question(`  ${question}${suffix}: `);
+    return answer.trim() || defaultValue || '';
+  } finally {
+    rl.close();
+    input.setRawMode?.(wasRaw);
+  }
+}
+
+async function promptSecret(question: string, defaultValue?: string): Promise<string> {
+  const wasRaw = input.isRaw;
+  input.setRawMode?.(false);
+  const rl = createInterface({ input, output, terminal: true });
+  const suffix = defaultValue ? ' (using existing if blank)' : '';
+  const prompt = `  ${question}${suffix}: `;
+
+  const originalWrite = (rl as any)._writeToOutput?.bind(rl);
+  let masking = false;
+  (rl as any)._writeToOutput = (text: string) => {
+    if (!masking) {
+      originalWrite?.(text);
+      return;
+    }
+
+    if (text.includes('\r') || text.includes('\n')) {
+      originalWrite?.(text);
+    } else if (text.includes('\x1b') || text.includes('\b')) {
+      originalWrite?.(text);
+    } else {
+      output.write('*'.repeat([...text].length));
+    }
+  };
+
+  try {
+    output.write(prompt);
+    masking = true;
+    const answer = await new Promise<string>((resolve) => {
+      rl.once('line', resolve);
+    });
+    return answer.trim() || defaultValue || '';
+  } finally {
+    masking = false;
+    rl.close();
+    input.setRawMode?.(wasRaw);
+  }
+}
+
+export async function ensureAgentConfigured(agent: AgentName, opts: { force?: boolean } = {}): Promise<void> {
+  if (agent !== 'gemini') return;
+
+  const config = loadConfig() || { agent };
+  if (!opts.force && config.pi?.gemini?.model && (config.pi.gemini.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)) {
+    return;
+  }
+
+  console.log('\n  Configure Gemini via Pi:\n');
+  const model = await promptInput('Model', config.pi?.gemini?.model || process.env.LAYRR_GEMINI_MODEL || 'gemini-2.5-flash');
+  const apiKey = await promptSecret('Gemini API key', config.pi?.gemini?.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+
+  saveConfig({
+    ...config,
+    agent,
+    pi: {
+      ...config.pi,
+      gemini: {
+        provider: 'google',
+        model,
+        apiKey,
+      },
+    },
+  });
+
+  console.log('  ✓ Saved Gemini configuration\n');
 }
 
 export async function promptAgentSelection(): Promise<AgentName> {

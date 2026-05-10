@@ -55,7 +55,7 @@ layrr --port <number> [project-root] [options]
 | --- | --- |
 | `-p, --port <number>` | Local dev server port. Required. |
 | `--proxy-port <number>` | Layrr proxy port. Defaults to `4567`. |
-| `--agent <name>` | AI agent to use: `claude` or `codex`. |
+| `--agent <name>` | AI agent to use: `claude`, `codex`, or `gemini`. |
 | `--no-open` | Do not open the browser automatically. |
 | `-h, --help` | Show help. |
 
@@ -65,6 +65,7 @@ Layrr supports:
 
 - `claude` - Claude Code
 - `codex` - Codex CLI
+- `gemini` - Gemini via Pi coding agent, installed as a Layrr dependency
 
 If no agent is configured, Layrr prompts you to pick one.
 

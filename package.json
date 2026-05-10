@@ -25,6 +25,8 @@
   "packageManager": "pnpm@10.28.2",
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.76",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
     "element-source": "^0.0.5",
     "geist": "^1.7.0",
     "lucide-static": "^0.577.0",

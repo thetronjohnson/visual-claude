@@ -1,13 +1,15 @@
-import type { Agent, AgentName, AgentOptions, AgentCheckResult } from './base.js';
+import type { Agent, AgentName, AgentOptions, AgentCheck } from './base.js';
 import { PUBLIC_AGENTS } from './base.js';
 import { ClaudeAgent, checkClaude } from './claude.js';
 import { CodexAgent, checkCodex } from './codex.js';
+import { GeminiAgent, checkGemini } from './gemini.js';
 
 export type { Agent, AgentName, AgentOptions };
 
 const ALL_AGENTS: { name: AgentName; displayName: string }[] = [
   { name: 'claude', displayName: 'Claude Code' },
   { name: 'codex', displayName: 'Codex CLI' },
+  { name: 'gemini', displayName: 'Gemini via Pi' },
 ];
 
 // Public agents shown in CLI picker and help text
@@ -15,7 +17,7 @@ export const AGENT_LIST = ALL_AGENTS.filter(a => PUBLIC_AGENTS.includes(a.name))
 
 const AGENTS: Record<AgentName, {
   create: (opts: AgentOptions) => Agent;
-  check: () => AgentCheckResult;
+  check: AgentCheck;
   installHint: string;
   authHint: string;
 }> = {
@@ -37,13 +39,25 @@ const AGENTS: Record<AgentName, {
 
     export OPENAI_API_KEY=<your-key>`,
   },
+  gemini: {
+    create: (opts) => new GeminiAgent(opts),
+    check: checkGemini,
+    installHint: 'reinstall layrr so bundled Pi dependencies are present: npm install -g layrr',
+    authHint: `  Set your Gemini API key:
+
+    export GEMINI_API_KEY=<your-key>
+
+  Optional model override:
+
+    export LAYRR_GEMINI_MODEL=gemini-2.5-flash`,
+  },
 };
 
 export function createAgent(name: AgentName, opts: AgentOptions): Agent {
   return AGENTS[name].create(opts);
 }
 
-export function checkAgent(name: AgentName): AgentCheckResult {
+export function checkAgent(name: AgentName): ReturnType<AgentCheck> {
   return AGENTS[name].check();
 }
 

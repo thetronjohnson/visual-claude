@@ -5,7 +5,7 @@ import { execSync } from 'child_process';
 import { startProxy } from './server/proxy.js';
 import { editQueue } from './server/edit-queue.js';
 import { createAgent, checkAgent, getAgentDisplayName, getInstallHint, getAuthHint, isValidAgent, AGENT_LIST } from './agents/index.js';
-import { resolveAgent, promptAgentSelection } from './config.js';
+import { ensureAgentConfigured, resolveAgent, promptAgentSelection, setGeminiPiModel } from './config.js';
 
 const args = process.argv.slice(2);
 
@@ -14,6 +14,8 @@ let proxyPort = 4567;
 let projectRoot = process.cwd();
 let noOpen = false;
 let agentOverride: string | undefined;
+let geminiModelOverride: string | undefined;
+let configureGemini = false;
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
@@ -26,6 +28,11 @@ for (let i = 0; i < args.length; i++) {
   } else if (arg === '--agent' && args[i + 1]) {
     agentOverride = args[i + 1];
     i++;
+  } else if (arg === '--gemini-model' && args[i + 1]) {
+    geminiModelOverride = args[i + 1];
+    i++;
+  } else if (arg === '--configure-gemini') {
+    configureGemini = true;
   } else if (arg === '--no-open') {
     noOpen = true;
   } else if (arg === '--help' || arg === '-h') {
@@ -39,6 +46,8 @@ for (let i = 0; i < args.length; i++) {
     -p, --port <number>        Dev server port (required)
     --proxy-port <number>      Layrr proxy port (default: 4567)
     --agent <name>             AI agent to use (${AGENT_LIST.map(a => a.name).join(', ')})
+    --gemini-model <model>     Save/use Gemini model (example: gemini-2.5-flash)
+    --configure-gemini         Reconfigure Gemini model and API key
     --no-open                  Don't open browser automatically
     -h, --help                 Show this help
 
@@ -52,7 +61,24 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+if (geminiModelOverride) {
+  setGeminiPiModel(geminiModelOverride);
+  agentOverride = 'gemini';
+  console.log(`  ✓ Saved Gemini model: ${geminiModelOverride}`);
+}
+
+if (configureGemini && !agentOverride) {
+  agentOverride = 'gemini';
+}
+
 if (!targetPort) {
+  if (configureGemini) {
+    await ensureAgentConfigured('gemini', { force: true });
+    process.exit(0);
+  }
+  if (geminiModelOverride) {
+    process.exit(0);
+  }
   console.error('  Error: --port is required. Specify your dev server port.\n');
   console.error('  npx layrr --port 3000');
   process.exit(1);
@@ -74,22 +100,30 @@ if (!agentName) {
   agentName = await promptAgentSelection();
 }
 
+await ensureAgentConfigured(agentName, { force: configureGemini });
+
 const displayName = getAgentDisplayName(agentName);
 
 // ---- Preflight: check agent ----
 console.log(`\n  Checking ${displayName}...`);
-const check = checkAgent(agentName);
+const check = await checkAgent(agentName);
 
 if (!check.ok) {
+  const installHint = getInstallHint(agentName);
+  const authHint = getAuthHint(agentName);
+
   if (check.error === 'not-authenticated') {
     console.error(`\n  ${displayName} is not authenticated.\n`);
-    console.error(getAuthHint(agentName));
+    console.error(authHint);
     console.error('\n  Then try layrr again.\n');
   } else if (check.error === 'not-found') {
     console.error(`\n  ${displayName} not found.\n`);
-    console.error(`  Install it: ${getInstallHint(agentName)}\n`);
+    console.error(`  Install it: ${installHint}\n`);
   } else {
     console.error(`\n  Could not start ${displayName}: ${check.error}\n`);
+    console.error(`  Install/update it: ${installHint}\n`);
+    console.error(authHint);
+    console.error('\n  Then try layrr again.\n');
   }
   process.exit(1);
 }

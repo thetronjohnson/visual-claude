@@ -30,7 +30,7 @@ The CLI proxies a local dev server, injects a browser overlay, resolves selected
 Important paths:
 
 - `src/cli.ts` - argument parsing, agent selection, git preflight, proxy startup, edit loop
-- `src/agents/` - public agent integrations for Claude Code and Codex
+- `src/agents/` - public agent integrations for Claude Code, Codex, and Gemini via Pi
 - `src/server/` - HTTP proxy, WebSocket handling, edit queue, version history
 - `src/editor/source-mapper.ts` - source file and line resolution
 - `overlay/` - injected browser UI, bundled as an IIFE
@@ -38,7 +38,7 @@ Important paths:
 
 ## Notes
 
-- Public agents are `claude` and `codex`.
+- Public agents are `claude`, `codex`, and `gemini`.
 - Keep overlay CSS scoped with the `__layrr` prefix.
 - Do not reintroduce app/server/dashboard/deployment code unless explicitly requested.
 - Use `rg` for repository searches.

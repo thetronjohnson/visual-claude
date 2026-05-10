@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'child_process';
 import type { PendingEditRequest } from '../server/edit-queue.js';
 
-export type AgentName = 'claude' | 'codex';
+export type AgentName = 'claude' | 'codex' | 'gemini';
 
-export const PUBLIC_AGENTS: AgentName[] = ['claude', 'codex'];
+export const PUBLIC_AGENTS: AgentName[] = ['claude', 'codex', 'gemini'];
 
 export interface Agent {
   readonly name: AgentName;
@@ -20,6 +20,8 @@ export interface AgentCheckResult {
   error?: string;
 }
 
+export type AgentCheck = () => AgentCheckResult | Promise<AgentCheckResult>;
+
 export function checkBinary(bin: string, args: string[], authKeywords: string[]): AgentCheckResult {
   try {
     const result = spawnSync(bin, args, {
@@ -29,12 +31,18 @@ export function checkBinary(bin: string, args: string[], authKeywords: string[])
 
     if (result.status === 0) return { ok: true };
 
-    const stderr = result.stderr?.toString().toLowerCase() || '';
-    if (authKeywords.some(kw => stderr.includes(kw))) {
+    const stderr = result.stderr?.toString() || '';
+    const stdout = result.stdout?.toString() || '';
+    const output = `${stderr}\n${stdout}`.toLowerCase();
+    if (authKeywords.some(kw => output.includes(kw))) {
       return { ok: false, error: 'not-authenticated' };
     }
 
-    return { ok: false, error: `${bin} exited with code ${result.status}` };
+    const reason = result.signal
+      ? `${bin} exited with signal ${result.signal}`
+      : `${bin} exited with code ${result.status ?? 'unknown'}`;
+    const detail = (stderr || stdout).trim();
+    return { ok: false, error: detail ? `${reason}: ${detail.slice(-200)}` : reason };
   } catch {
     return { ok: false, error: 'not-found' };
   }
